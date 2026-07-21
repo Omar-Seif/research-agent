@@ -1,0 +1,9 @@
+[project]
+name = "research-agent"
+version = "1.0.0"
+description = "An AI-powered research agent that takes user query and calls multiple tools in sequence. Returns a structured JSON report with findings, sources, and confidence"
+readme = "README.md"
+requires-python = "==3.12"
+authors = [
+    { name = "Omar Farahat", email = "omarhseif04@gmail.com" }
+]
