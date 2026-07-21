@@ -22,6 +22,7 @@ logs/*
 
 # IDE Folders
 .vscode/
+*.code-workspace
 .idea/
 *.swp
 *.swo
