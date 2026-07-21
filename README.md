@@ -99,7 +99,7 @@ Before getting started, ensure you have:
 ### 1. Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Omar-Seif/research-agent.git
 cd research-agent
 ```
 
