@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     # Server Configuration
     DEBUG: bool = False
     LOG_LEVEL: str = "DEBUG"
+    LOG_FILE_PATH: str = "logs/app.log"
 
     # CORS Configuration
     ALLOWED_ORIGINS: List[str] = []
