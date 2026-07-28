@@ -17,6 +17,54 @@ The project is currently in its setup phase. The initial foundation has been com
 
 ---
 
+# 🛠️ Setup Instructions
+
+## Prerequisites
+
+Before getting started, ensure you have:
+
+- Python **3.12**
+- Miniconda or Anaconda
+- A **Groq API Key** (free tier available)
+
+---
+
+## Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/Omar-Seif/research-agent.git
+cd research-agent
+```
+
+### 2. Create and Activate a Conda Environment
+
+```bash
+conda create -n research-agent python=3.12
+conda activate research-agent
+```
+
+### 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Configure Environment Variables
+
+```bash
+cp .env.example .env
+```
+
+Open the `.env` file and add your API key:
+
+```env
+GROQ_API_KEY=your-groq-api-key
+```
+
+---
+
 # 🏗️ Architecture Decisions
 
 ## Decision: Groq over OpenAI
@@ -82,51 +130,41 @@ research-agent/
 
 ---
 
-# 🛠️ Setup Instructions
+## Decision: Exception Hierarchy
 
-## Prerequisites
+#### Context
 
-Before getting started, ensure you have:
+The research agent executes a multi-stage pipeline consisting of tools such as web search, article fetching, fact extraction, and fact checking. Although each tool performs different work, they often fail in the same ways (timeouts, rate limits, invalid responses, etc.).
 
-- Python **3.12**
-- Miniconda or Anaconda
-- A **Groq API Key** (free tier available)
+Instead of creating separate exception classes for every tool, the project organizes exceptions by **failure type**.
 
----
+#### Decision
 
-## Installation
+The exception hierarchy is built around a shared base class:
 
-### 1. Clone the Repository
+- `ResearchAgentError` serves as the root of all custom exceptions.
+- Tool-specific information (such as `tool_name`) is stored as data on the exception instance instead of being encoded in the class hierarchy.
+- Native Python exception chaining (`raise ... from e`) is used to preserve the original cause of failures.
 
-```bash
-git clone https://github.com/Omar-Seif/research-agent.git
-cd research-agent
+#### Exceptions Hierarchy
+
+```text
+ResearchAgentError
+├── ConfigurationError
+├── ExternalAPITimeoutError
+├── ExternalAPIRateLimitError
+├── ExternalAPIResponseError
+│   ├── MalformedResponseError
+│   ├── UnexpectedStatusError
+│   └── ContextWindowExceededError
+├── InputValidationError
+├── ToolDependencyError
+├── FetchContentError
+│   ├── DeadLinkError
+│   ├── BlockedRequestError
+│   └── InvalidContentTypeError
+├── OrchestrationError
+│   ├── WorkflowInterruptedError
+│   └── ResourceExhaustedError
+└── UnexpectedError
 ```
-
-### 2. Create and Activate a Conda Environment
-
-```bash
-conda create -n research-agent python=3.12
-conda activate research-agent
-```
-
-### 3. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Configure Environment Variables
-
-```bash
-cp .env.example .env
-```
-
-Open the `.env` file and add your API key:
-
-```env
-GROQ_API_KEY=your-groq-api-key
-```
-
----
-
