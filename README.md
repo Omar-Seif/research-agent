@@ -168,3 +168,72 @@ ResearchAgentError
 │   └── ResourceExhaustedError
 └── UnexpectedError
 ```
+
+
+---
+
+
+## Decision: Separate Internal Pipeline Models from API Models
+
+#### Context
+
+The research agent processes data through several stages—search, content fetching, fact extraction, and fact verification. Each stage requires data structures tailored to its own responsibilities, while the API should expose a stable, consumer-friendly response format.
+
+Using the same models for both internal processing and external responses would tightly couple the pipeline implementation to the public API, making future changes more difficult.
+
+#### Decision
+
+The project uses two distinct model layers:
+
+- **Internal models** (`src/core/models.py`) represent the working state of the research pipeline.
+- **API models** (`src/api/schemas.py`) define the public request and response contracts exposed by the REST API.
+- Sources are assigned deterministic, hash-based identifiers using the first 16 hexadecimal characters of a SHA-256 hash of the canonical URL. These IDs are used for source deduplication and cross-referencing findings without exposing implementation details.
+
+#### Architecture
+
+```text
+Client Request
+      │
+      ▼
+ResearchRequest
+      │
+      ▼
+──────────────────────────────────────
+ Internal Pipeline
+──────────────────────────────────────
+SearchResult
+      │
+      ▼
+ArticleContent
+      │
+      ▼
+ExtractedFact
+      │
+      ▼
+FactCheckResult
+      │
+      ▼
+ResearchState
+──────────────────────────────────────
+      │
+      ▼
+ResearchReport
+      │
+      ▼
+Client Response
+```
+
+### Context
+
+**Separation of concerns**
+
+Internal models are optimized for processing and orchestration, while API models are optimized for stability and usability. Changes to the internal pipeline do not require changes to the public API.
+
+**Stable API contract**
+
+Clients interact only with API schemas, allowing the implementation of the research pipeline to evolve without introducing breaking API changes.
+
+**Explicit data transformations**
+
+Each pipeline stage produces a well-defined model, making data flow easier to understand, validate, and test.
+
