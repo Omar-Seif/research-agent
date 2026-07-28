@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     RETRY_DELAY: int = 1
 
     @field_validator("LOG_LEVEL", mode="after")
+    @classmethod
     def validate_log_level(cls, v: str) -> str:
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         upper_v = v.upper()
