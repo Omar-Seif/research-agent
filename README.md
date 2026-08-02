@@ -65,38 +65,6 @@ GROQ_API_KEY=your-groq-api-key
 
 ---
 
-# 🏗️ Architecture Decisions
-
-## Decision: Groq over OpenAI
-
-### Context
-
-The project requires LLM inference while keeping development costs low.
-
-### Decision
-
-Use the **Groq API** through the **OpenAI-compatible Python SDK**.
-
-### Reasoning
-
-- Groq's free tier provides sufficient quota for development.
-- The OpenAI SDK supports custom `base_url`, allowing easy provider switching.
-- Migrating to OpenAI (or another compatible provider) later only requires a configuration change.
-
-### Current Implementation
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="https://api.groq.com/openai/v1",
-    api_key="your-groq-api-key"
-)
-```
-
----
-
-
 # 📁 Project Structure
 
 ```text
@@ -126,6 +94,37 @@ research-agent/
 ├── pyproject.toml              # Project metadata
 ├── requirements.txt            # Python dependencies
 └── README.md                   # Project documentation
+```
+
+---
+
+# 🏗️ Architecture Decisions
+
+## Decision: Groq over OpenAI
+
+### Context
+
+The project requires LLM inference while keeping development costs low.
+
+### Decision
+
+Use the **Groq API** through the **OpenAI-compatible Python SDK**.
+
+### Reasoning
+
+- Groq's free tier provides sufficient quota for development.
+- The OpenAI SDK supports custom `base_url`, allowing easy provider switching.
+- Migrating to OpenAI (or another compatible provider) later only requires a configuration change.
+
+### Current Implementation
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.groq.com/openai/v1",
+    api_key="your-groq-api-key"
+)
 ```
 
 ---
@@ -237,9 +236,53 @@ Clients interact only with API schemas, allowing the implementation of the resea
 
 Each pipeline stage produces a well-defined model, making data flow easier to understand, validate, and test.
 
-
 ---
 
+## Decision: Introduce a `GroqLLMClient` that encapsulates all communication with the LLM behind a single interface.
+
+**Why**
+
+Multiple pipeline components require LLM inference (fact extraction, verification, summarization). Rather than allowing each tool to depend directly on the OpenAI SDK, all requests pass through a single client responsible for provider communication.
+
+**Responsibilities**
+
+- Expose a single async `complete()` interface.
+- Manage communication with the OpenAI-compatible API.
+- Handle retries and exponential backoff for transient failures.
+- Translate SDK exceptions into project-specific exceptions.
+- Return an internal `LLMResponse` model instead of SDK objects.
+- Support optional function/tool calling.
+
+**Workflow**
+
+```text
+Pipeline Tool
+      │
+      ▼
+GroqLLMClient
+      │
+      ▼
+AsyncOpenAI SDK
+      │
+      ▼
+Groq API
+      │
+      ▼
+LLMResponse
+      │
+      ▼
+Pipeline Tool
+```
+
+**Benefits**
+
+- Decouples business logic from the SDK.
+- Centralizes retry and error handling.
+- Makes provider changes low-cost through configuration.
+- Keeps the rest of the application working with domain models rather than SDK types.
+
+
+---
 
 ## Decision: Generic Base Tool Abstraction
 
@@ -253,3 +296,4 @@ Each pipeline stage produces a well-defined model, making data flow easier to un
 - Makes tools interchangeable within the orchestration pipeline while preserving clear input/output contracts.
 - Centralizes shared behavior without constraining tool-specific implementations.
 
+---
