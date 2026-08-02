@@ -309,3 +309,19 @@ Pipeline Tool
 - Makes the search provider easy to configure without code changes.
 - Uses Tavily's native domain filtering instead of implementing custom filtering logic.
 - Restricts searches to a curated set of high-quality domains to improve source reliability.
+
+---
+
+## Individual Tools
+
+### Web Search Tool  
+
+Implemented the first concrete pipeline tool: `WebSearchTool`.
+
+**Design decisions:**
+- Uses Tavily's asynchronous client for web search.
+- Inherits from the generic `BaseTool[str, List[SearchResult]]`, giving the tool a strongly typed input/output contract.
+- Returns internal `SearchResult` models instead of raw Tavily responses, keeping the rest of the pipeline independent of the search provider.
+- Supports configurable domain allowlisting through `TRUSTED_DOMAINS` in `settings.py`.
+- Validates user input before making external API requests.
+- Translates Tavily-specific exceptions into project-specific exceptions, preventing SDK details from leaking into the rest of the application.
