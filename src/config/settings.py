@@ -5,44 +5,60 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     """
-    Application configuration loaded from environment variables and .env file.
+    Application configuration loaded from environment variables and .env.
 
-    Values are loaded from (in order of priority):
-    1. Environment variables (highest priority)
-    2. .env file (local development)
-    3. Default values (lowest priority)
-
-    Required fields (no default):
-        GROQ_API_KEY: Must be set in .env or environment
-
-    Optional fields (with defaults):
-        GROQ_BASE_URL, MODEL, API_PREFIX, DEBUG, LOG_LEVEL, ALLOWED_ORIGINS,
-        REQUEST_TIMEOUT, MAX_RETRIES, RETRY_DELAY
-
-    Usage:
-        from src.config.settings import settings
-        api_key = settings.GROQ_API_KEY
+    Priority:
+        1. Environment variables
+        2. .env file
+        3. Default values
     """
 
-    GROQ_API_KEY: str
+    # =========================================================================
+    # LLM Configuration
+    # =========================================================================
 
-    # API Configuration
+    GROQ_API_KEY: str
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
     MODEL: str = "llama-3.1-8b-instant"
-    API_PREFIX: str = "/api"
 
-    # Server Configuration
+    # =========================================================================
+    # Search Configuration
+    # =========================================================================
+
+    TAVILY_API_KEY: str
+    MAX_SEARCH_RESULTS: int = 5
+    # Domains Tavily is allowed to search.
+    SEARCH_INCLUDE_DOMAINS: List[str] = []
+
+    # =========================================================================
+    # API Configuration
+    # =========================================================================
+
+    API_PREFIX: str = "/api"
+    ALLOWED_ORIGINS: List[str] = []
+
+    # =========================================================================
+    # Application Configuration
+    # =========================================================================
+
     DEBUG: bool = False
+
+    # =========================================================================
+    # Logging
+    # =========================================================================
+
     LOG_LEVEL: str = "DEBUG"
     LOG_FILE_PATH: str = "logs/app.log"
 
-    # CORS Configuration
-    ALLOWED_ORIGINS: List[str] = []
+    # =========================================================================
+    # HTTP Client Configuration
+    # =========================================================================
 
-    # API Behavior
     REQUEST_TIMEOUT: int = 30
     MAX_RETRIES: int = 3
     RETRY_DELAY: int = 1
+
+    # =========================================================================
 
     @field_validator("LOG_LEVEL", mode="after")
     @classmethod
@@ -52,6 +68,25 @@ class Settings(BaseSettings):
         if upper_v not in valid_levels:
             raise ValueError(f"LOG_LEVEL must be one of {valid_levels}, got: {v}")
         return upper_v
+
+    @field_validator("SEARCH_INCLUDE_DOMAINS", mode="after")
+    @classmethod
+    def validate_search_include_domains(cls, domains: List[str]) -> List[str]:
+
+        normalized: List[str] = []
+        seen: set[str] = set()
+
+        for domain in domains:
+            domain = domain.strip().lower()
+
+            if not domain:
+                raise ValueError("SEARCH_INCLUDE_DOMAINS cannot contain empty values.")
+
+            if domain not in seen:
+                normalized.append(domain)
+                seen.add(domain)
+
+        return normalized
 
     model_config = SettingsConfigDict(
         env_file=".env",

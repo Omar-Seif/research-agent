@@ -297,3 +297,15 @@ Pipeline Tool
 - Centralizes shared behavior without constraining tool-specific implementations.
 
 ---
+
+## Decision: External Search Provider Configuration
+
+**Context:** The research agent requires a web search capability to retrieve relevant sources before article fetching and fact extraction.
+
+**Decision:** Integrate Tavily as the search provider and manage all search behavior through configuration. Search-specific settings (API key, maximum search results, and included domains) are defined in the application's configuration layer rather than hardcoded in the search tool.
+
+**Rationale:**
+- Separates application logic from deployment-specific configuration.
+- Makes the search provider easy to configure without code changes.
+- Uses Tavily's native domain filtering instead of implementing custom filtering logic.
+- Restricts searches to a curated set of high-quality domains to improve source reliability.
