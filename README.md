@@ -237,3 +237,19 @@ Clients interact only with API schemas, allowing the implementation of the resea
 
 Each pipeline stage produces a well-defined model, making data flow easier to understand, validate, and test.
 
+
+---
+
+
+## Decision: Generic Base Tool Abstraction
+
+**Context:** Every research tool follows the same lifecycle (validate input → execute → return output) but operates on different data types.
+
+**Decision:** Introduced a generic `BaseTool[InputT, OutputT]` abstract class that defines a common `execute()` contract while allowing each tool to specify its own strongly typed input and output models.
+
+**Rationale:**
+- Enforces a consistent interface across all pipeline tools.
+- Uses Python generics for type safety instead of relying on `Any`.
+- Makes tools interchangeable within the orchestration pipeline while preserving clear input/output contracts.
+- Centralizes shared behavior without constraining tool-specific implementations.
+
