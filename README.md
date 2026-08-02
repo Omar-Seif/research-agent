@@ -312,9 +312,9 @@ Pipeline Tool
 
 ---
 
-## Individual Tools
+# Individual Tools
 
-### Web Search Tool  
+## Web Search Tool  
 
 Implemented the first concrete pipeline tool: `WebSearchTool`.
 
@@ -325,3 +325,40 @@ Implemented the first concrete pipeline tool: `WebSearchTool`.
 - Supports configurable domain allowlisting through `TRUSTED_DOMAINS` in `settings.py`.
 - Validates user input before making external API requests.
 - Translates Tavily-specific exceptions into project-specific exceptions, preventing SDK details from leaking into the rest of the application.
+
+## FetchArticlesTool
+
+### Why `httpx` + `trafilatura`?
+
+- `httpx` provides an async HTTP client that integrates naturally with the async-first architecture.
+- `trafilatura` is responsible only for extracting the main article content from HTML after it has been fetched.
+
+This keeps ownership of the retrieval pipeline while delegating HTML boilerplate removal (navigation bars, ads, footers, etc.) to a mature library.
+
+**Tradeoff**
+
+| Option | Pros | Cons |
+|--------|------|------|
+| `trafilatura` ✅ | Robust article extraction, less boilerplate, focuses project on orchestration | Doesn't teach HTML extraction algorithms |
+| `BeautifulSoup/regex`❌ | Learn HTML parsing internals | Large amount of parsing code unrelated to the project's learning goals |
+
+Implements HTTP fetching, validation, content-type checking, size limits, and error handling itself.
+
+---
+
+### Why stream responses instead of downloading everything?
+
+Articles are downloaded using `httpx.AsyncClient.stream()` instead of loading the entire response into memory.
+
+The tool performs two layers of protection:
+
+1. Check the `Content-Length` header (when available) before downloading.
+2. Stream the response in chunks and stop immediately if the accumulated size exceeds the configured limit.
+
+This prevents unnecessarily downloading very large pages and also protects against servers that omit or misreport the `Content-Length` header.
+
+---
+
+### Exception translation pattern
+
+Translated http-specific exceptions into project-specific exceptions. This keeps the rest of the research pipeline independent of the HTTP library
