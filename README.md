@@ -710,3 +710,11 @@ NOISY_LOGGERS = [
 This list is intentionally hardcoded in `logger.py` because it reflects implementation details of project dependencies rather than application configuration.
 
 ---
+
+## Decision: Remove Fact-Checking Stage
+
+**Decision:** Remove the `FactCheckTool` from the research pipeline.
+
+**Why:** The project's goal is to learn AI engineering patterns (tool orchestration, retrieval, structured LLM outputs, retries, and exception handling). Adding a fact-checking stage would require another round of LLM calls, significantly increasing latency, token usage, and rate-limit pressure on the free Groq tier while providing relatively little additional learning value.
+
+**Tradeoff:** The final report now uses **extraction confidence** rather than independently verified confidence. This limitation is documented and can be addressed in a future version with a stronger model or dedicated verification pipeline.
