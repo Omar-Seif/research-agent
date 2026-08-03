@@ -316,6 +316,24 @@ Pipeline Tool
 
 ## Web Search Tool  
 
+### Pipeline Position
+
+```text
+Web Search        ← This tool
+      │
+      ▼
+Fetch Articles
+      │
+      ▼
+Extract Facts   
+      │
+      ▼
+Fact Check
+      │
+      ▼
+Generate Report
+```
+
 Implemented the first concrete pipeline tool: `WebSearchTool`.
 
 **Design decisions:**
@@ -326,7 +344,25 @@ Implemented the first concrete pipeline tool: `WebSearchTool`.
 - Validates user input before making external API requests.
 - Translates Tavily-specific exceptions into project-specific exceptions, preventing SDK details from leaking into the rest of the application.
 
-## FetchArticlesTool
+## Fetch Articles Tool
+
+### Pipeline Position
+
+```text
+Web Search
+      │
+      ▼
+Fetch Articles          ← This tool
+      │
+      ▼
+Extract Facts           
+      │
+      ▼
+Fact Check
+      │
+      ▼
+Generate Report
+```
 
 ### Why `httpx` + `trafilatura`?
 
@@ -362,3 +398,315 @@ This prevents unnecessarily downloading very large pages and also protects again
 ### Exception translation pattern
 
 Translated http-specific exceptions into project-specific exceptions. This keeps the rest of the research pipeline independent of the HTTP library
+
+---
+
+## Extract Facts Tool
+
+### Pipeline Position
+
+```text
+Web Search
+      │
+      ▼
+Fetch Articles
+      │
+      ▼
+Extract Facts           ← This tool
+      │
+      ▼
+Fact Check
+      │
+      ▼
+Generate Report
+```
+
+---
+
+### Overview
+
+The **ExtractFactsTool** is the reasoning stage of the research pipeline. It receives fully extracted article content (`List[ArticleContent]`) from the previous stage and uses an LLM to convert unstructured text into structured factual claims (`List[ExtractedFact]`). :contentReference[oaicite:0]{index=0}
+
+Unlike the search and article-fetching stages, this tool performs semantic reasoning rather than simple data retrieval. The output is later consumed by the fact-checking stage.
+
+---
+
+Input:
+
+- `List[ArticleContent]`
+
+Output:
+
+- `List[ExtractedFact]`
+
+---
+
+### 1. Process Articles Individually
+
+Each article is processed in its own LLM request instead of batching multiple articles together. :contentReference[oaicite:1]{index=1}
+
+**Why**
+
+- Keeps source attribution simple (every extracted fact knows exactly which article it came from)
+- One failed article does not affect the rest of the batch
+- Avoids unnecessarily large prompts
+- Easier logging and debugging
+
+Example:
+
+```text
+Article A  ──► LLM ──► Facts A
+
+Article B  ──► LLM ──► Facts B
+
+Article C  ──► LLM ──► Error
+                    │
+                    ▼
+                Skip article
+
+Final Output:
+Facts A + Facts B
+```
+
+This follows the pipeline philosophy of **graceful degradation** rather than failing the entire workflow because of one bad input.
+
+---
+
+### 2. Use Function Calling Instead of Prompting for JSON
+
+Rather than asking the model:
+
+> "Return valid JSON."
+
+the tool forces the model to call an OpenAI-compatible function named `extract_facts`. The schema defines the exact structure expected from the model. :contentReference[oaicite:2]{index=2} :contentReference[oaicite:3]{index=3}
+
+Example schema:
+
+```python
+extract_facts(
+    facts=[
+        {
+            "statement": "...",
+            "extraction_confidence": 0.95,
+            "evidence": "..."
+        }
+    ]
+)
+```
+
+**Why**
+
+Function calling is significantly more reliable than prompt-only JSON because it prevents common formatting problems such as:
+
+- Markdown code fences
+- Extra explanations
+- Invalid JSON
+- Missing fields
+
+The LLM is constrained to produce structured arguments matching the schema.
+
+---
+
+### 3. Force Tool Usage
+
+The request is sent with:
+
+```python
+tool_choice="required"
+```
+
+instead of:
+
+```python
+tool_choice="auto"
+```
+
+This guarantees the model must invoke the extraction function rather than replying with plain text. :contentReference[oaicite:4]{index=4}
+
+This makes downstream parsing much simpler because the tool always expects a function call.
+
+---
+
+### 4. Parse Tool Calls Instead of Free Text
+
+After the LLM responds, the tool extracts the function arguments and converts them into Python objects. :contentReference[oaicite:5]{index=5}
+
+Pipeline:
+
+```text
+LLM Response
+      │
+      ▼
+tool_calls
+      │
+      ▼
+arguments JSON
+      │
+      ▼
+Python dictionaries
+      │
+      ▼
+ExtractedFact models
+```
+
+This keeps the boundary between the LLM and the application strongly typed.
+
+---
+
+### 5. Retry Probabilistic Failures
+
+One production issue discovered during development was malformed function calls.
+
+Example:
+
+```xml
+<function=extract_facts>
+{
+    "facts": [...]
+}
+</function>
+```
+
+The JSON itself was correct, but the XML wrapper violated the OpenAI function-calling protocol, causing Groq to reject the request.
+
+This failure is **probabilistic**, meaning the model may produce valid output on a subsequent attempt.
+
+Therefore the client retries:
+
+- Attempt 1
+- Attempt 2
+- Attempt 3
+
+using exponential backoff before giving up.
+
+---
+
+### 6. Do Not Retry Deterministic Failures
+
+Large articles occasionally exceeded the model's context window.
+
+Example:
+
+```text
+HTTP 413
+Request too large
+```
+
+Retrying will never make the article smaller.
+
+Instead the article is skipped and processing continues.
+
+This distinction between **probabilistic** and **deterministic** failures greatly improves reliability.
+
+---
+
+### 7. Graceful Degradation
+
+Errors affecting one article never stop the entire pipeline. :contentReference[oaicite:6]{index=6}
+
+Examples:
+
+- malformed response
+- timeout
+- rate limit
+- context window exceeded
+
+Result:
+
+```text
+Article 1 ✓
+Article 2 ✓
+Article 3 ✗
+Article 4 ✓
+
+Pipeline continues.
+
+Output contains facts from Articles 1, 2 and 4.
+```
+
+This mirrors how production ETL and AI pipelines typically behave.
+
+---
+
+### Failure Modes
+
+| Failure | Cause | Domain Exception | Retry? |
+|---------|-------|------------------|--------|
+| Rate limit | HTTP 429 | `ExternalAPIRateLimitError` | ✅ Yes |
+| Timeout | Network/API | `ExternalAPITimeoutError` | ✅ Yes |
+| Malformed tool call | Invalid function arguments | `MalformedResponseError` | ✅ Yes |
+| Context window exceeded | HTTP 413 | `ContextWindowExceededError` | ❌ No |
+| Invalid request | HTTP 400 | `InputValidationError` | ❌ No |
+
+---
+
+### Current Limitations
+
+Large articles are currently skipped rather than chunked.
+
+Future improvements could include:
+
+- chunking large articles into smaller sections
+- merging facts extracted from multiple chunks
+- supporting larger-context models
+- automatic chunk overlap for improved context preservation
+
+These optimizations were intentionally deferred to keep the initial implementation focused and maintainable.
+
+---
+
+### Key Takeaways
+
+Building this tool highlighted several important production lessons:
+
+- Function calling is substantially more reliable than prompt-only JSON generation.
+- LLM failures are not all the same—probabilistic failures should often be retried, while deterministic failures should fail fast.
+- Graceful degradation is preferable to aborting an entire pipeline because of one problematic article.
+- Separating retry logic (LLM client) from business logic (tool implementation) results in cleaner, more maintainable code.
+
+---
+
+Testing revealed an important limitation of **`llama-3.1-8b-instant`** when performing structured tool calling.
+
+Although malformed tool calls (`tool_use_failed`) are classified as **retryable**, retries do not always recover the request. In testing, one article consistently failed all three retry attempts due to the model repeatedly generating an XML-style function wrapper instead of the OpenAI-compatible tool call format expected by Groq.
+
+The pipeline behaves as designed:
+
+- Retries malformed responses with exponential backoff.
+- Logs the failure after the final retry.
+- Skips the failed article.
+- Continues processing the remaining articles.
+
+This demonstrates graceful degradation rather than pipeline failure.
+
+**Takeaway:** Smaller open-weight models can exhibit a relatively high failure rate on strict function-calling tasks. Increasing `max_retries` may improve success rates at the cost of additional latency, while upgrading to a more capable model would likely reduce these failures.
+
+---
+
+## Logging Improvements
+
+**Decision:** Suppress verbose third-party DEBUG logs while preserving DEBUG logging for the application's own code.
+
+**Why?**
+
+Configuring the root logger at `DEBUG` also enabled debug logging from dependencies such as `httpx`, `httpcore`, `openai`, `trafilatura`, and `readability-lxml`. These libraries produced hundreds of low-level networking and parsing messages that obscured the application's own retry logic and pipeline events.
+
+Instead of lowering the global log level, the project explicitly raises the log level of known noisy libraries to `WARNING`, allowing:
+
+- Clean, readable logs during development
+- Full DEBUG visibility for application code
+- Easier debugging of retries, tool execution, and pipeline flow
+
+```python
+NOISY_LOGGERS = [
+    "httpx",
+    "httpcore",
+    "openai",
+    "trafilatura",
+    "readability-lxml",
+]
+```
+
+This list is intentionally hardcoded in `logger.py` because it reflects implementation details of project dependencies rather than application configuration.
+
+---

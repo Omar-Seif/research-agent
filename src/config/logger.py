@@ -58,6 +58,18 @@ def setup_logging() -> None:
     except OSError as e:
         root_logger.warning(f"Failed to set up file logging: {e}")
 
+    NOISY_LOGGERS = [
+        "httpx",
+        "httpcore",
+        "openai",
+        "trafilatura",
+        "readability-lxml",
+    ]
+
+    for logger_name in NOISY_LOGGERS:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.WARNING)
+
 
 def get_logger(name: str) -> logging.Logger:
     """
