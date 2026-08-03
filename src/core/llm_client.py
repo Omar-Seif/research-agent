@@ -6,6 +6,7 @@ import openai
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 from openai import AsyncOpenAI
+from src.config.logger import get_logger
 from src.utils.exceptions import (
     ConfigurationError,
     ExternalAPITimeoutError,
@@ -14,7 +15,11 @@ from src.utils.exceptions import (
     UnexpectedStatusError,
     InputValidationError,
     UnexpectedError,
+    ContextWindowExceededError,
+    MalformedResponseError,
 )
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -58,6 +63,7 @@ class GroqLLMClient:
         self,
         messages: List[Dict[str, str]],
         tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[str] = None,  # "auto", "required", or "none"
     ) -> LLMResponse:
         """
         Send messages to the LLM and get a response.
@@ -68,16 +74,30 @@ class GroqLLMClient:
         """
         for attempt in range(self.max_retries):
             try:
-                return await self._call_api(messages, tools)
-            except (ExternalAPITimeoutError, ExternalAPIRateLimitError) as e:
+                return await self._call_api(messages, tools, tool_choice)
+            except (
+                ExternalAPITimeoutError,
+                ExternalAPIRateLimitError,
+                MalformedResponseError,
+            ) as e:
                 if attempt == self.max_retries - 1:
+                    logger.warning(
+                        f"Attempt {attempt+1}/{self.max_retries} failed with {type(e).__name__}, no more retries"
+                    )
                     raise
+                logger.debug(
+                    f"Attempt {attempt+1}/{self.max_retries} failed with {type(e).__name__}, retrying..."
+                )
                 # Respect retry_after if provided
                 if hasattr(e, "retry_after") and e.retry_after:
                     await asyncio.sleep(e.retry_after)
                 else:
                     await asyncio.sleep(self._get_backoff_delay(attempt))
-            except (ConfigurationError, InputValidationError):
+            except (
+                ConfigurationError,
+                InputValidationError,
+                ContextWindowExceededError,
+            ):
                 # Don't retry auth or validation errors
                 raise
             except Exception as e:
@@ -92,6 +112,7 @@ class GroqLLMClient:
         self,
         messages: List[Dict[str, str]],
         tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[str] = None,
     ) -> LLMResponse:
         """
         Internal method that makes the actual API call and translates
@@ -107,7 +128,7 @@ class GroqLLMClient:
 
             if tools:
                 kwargs["tools"] = tools
-                kwargs["tool_choice"] = "auto"
+                kwargs["tool_choice"] = tool_choice or "auto"
 
             response = await self.client.chat.completions.create(**kwargs)
 
@@ -146,7 +167,23 @@ class GroqLLMClient:
             ) from e
 
         except openai.BadRequestError as e:
-            # Must come before APIStatusError (subclass)
+            # Check if this is a tool-use failure (model produced malformed JSON)
+            is_tool_use_failure = False
+            try:
+                error_body = e.response.json() if hasattr(e, "response") else {}
+                error_code = error_body.get("error", {}).get("code")
+                is_tool_use_failure = error_code == "tool_use_failed"
+            except Exception:
+                pass  # Can't parse the error body — treat as a normal bad request
+
+            if is_tool_use_failure:
+                raise MalformedResponseError(
+                    message=f"Model produced malformed tool arguments: {e.message}",
+                    tool_name="llm",
+                    input_snippet=str(messages)[:200],
+                ) from e
+
+            # Default: invalid request parameters
             raise InputValidationError(
                 message=f"Invalid request parameters (HTTP {e.status_code}): {e.message}",
                 tool_name="llm",
@@ -154,6 +191,15 @@ class GroqLLMClient:
             ) from e
 
         except openai.APIStatusError as e:
+            # Check for specific status codes
+            if e.status_code == 413:
+                # Payload Too Large — the request exceeds the model's token limit
+                raise ContextWindowExceededError(
+                    message=f"Request exceeds token limit: {e.message}",
+                    tool_name="llm",
+                ) from e
+
+            # Other 4xx/5xx errors that aren't rate limits
             raise UnexpectedStatusError(
                 message=f"LLM API returned error: {e.status_code}",
                 tool_name="llm",

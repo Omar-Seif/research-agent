@@ -73,7 +73,7 @@ class Finding(BaseModel):
         ...,
         ge=0.0,
         le=1.0,
-        description="Confidence that the statement is true (0.0-1.0)",
+        description="Model's confidence in the accuracy of this extracted fact.",
     )
     source_ids: List[str] = Field(
         ..., description="IDs of sources that support this finding", min_length=1

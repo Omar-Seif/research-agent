@@ -68,33 +68,7 @@ class ExtractedFact(BaseModel):
     )
 
 
-class FactCheckResult(BaseModel):
-    """
-    Result of verifying a fact against available evidence.
-
-    Links back to the original ExtractedFact by ID and provides a verified
-    confidence score. verification_confidence reflects how confident the
-    model is that the fact is actually true.
-    """
-
-    extracted_fact_id: UUID = Field(
-        ..., description="ID of the ExtractedFact this result corresponds to"
-    )
-    is_supported: bool = Field(
-        ..., description="Whether the fact is supported by available evidence"
-    )
-    verification_confidence: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Confidence that the fact is actually true (0.0-1.0)",
-    )
-    supporting_evidence: Optional[str] = Field(
-        None, description="Evidence that supports the fact"
-    )
-    conflicting_evidence: Optional[str] = Field(
-        None, description="Any evidence that contradicts the fact"
-    )
+# FactCheckResult was removed — see README ADR "Remove Fact-Checking Stage" for reasoning.
 
 
 @dataclass
@@ -111,4 +85,3 @@ class ResearchState:
     search_results: List[SearchResult] = field(default_factory=list)
     articles: List[ArticleContent] = field(default_factory=list)
     extracted_facts: List[ExtractedFact] = field(default_factory=list)
-    fact_checks: List[FactCheckResult] = field(default_factory=list)
