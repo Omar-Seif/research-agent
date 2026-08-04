@@ -78,14 +78,22 @@ class ResearchAgent:
                     query,
                     "No facts could be extracted",
                     elapsed_seconds=time.perf_counter() - start_time,
+                    sources_fetched=len(articles),
                 )
 
             # Step 4: Build sources and findings
             logger.info(
                 f"Building report with {len(facts)} facts from {len(articles)} sources"
             )
-            sources = self._build_sources(articles)
-            findings = self._build_findings(facts, sources)
+            all_sources = self._build_sources(articles)
+            findings = self._build_findings(facts, all_sources)
+
+            # Filter to only sources that contributed findings
+            used_source_ids = {
+                source_id for finding in findings for source_id in finding.source_ids
+            }
+            sources = [s for s in all_sources if s.id in used_source_ids]
+
             overall_confidence = self._compute_overall_confidence(findings)
 
             # Step 5: Generate summary
@@ -98,6 +106,7 @@ class ResearchAgent:
                 summary=summary,
                 findings=findings,
                 sources=sources,
+                sources_fetched=len(all_sources),
                 overall_confidence=overall_confidence,
                 timestamp=datetime.now(timezone.utc),
                 research_time_seconds=time.perf_counter() - start_time,
@@ -134,20 +143,24 @@ class ResearchAgent:
             ]
         )
 
-        system_prompt = """You are a research summarizer. Write a concise, coherent summary paragraph synthesizing the facts provided.
+        system_prompt = """
+        You are a research summarizer. Write a concise, coherent summary paragraph synthesizing the facts provided.
 
-The summary should:
-- Synthesize the key information from the facts
-- Be 2-3 paragraphs (150-250 words)
-- Be written in a clear, professional tone
-- Not simply list the facts — synthesize them"""
+        The summary should:
+        - Synthesize the key information from the facts
+        - Be 2-3 paragraphs (150-250 words)
+        - Be written in a clear, professional tone
+        - Not simply list the facts — synthesize them
+        """
 
-        user_prompt = f"""Research question: {query}
+        user_prompt = f"""
+        Research question: {query}
 
-Facts found:
-{facts_text}
+        Facts found:
+        {facts_text}
 
-Write a summary paragraph answering the research question based on the facts above."""
+        Write a summary paragraph answering the research question based on the facts above.
+        """
 
         try:
             response = await self.llm_client.complete(
@@ -216,7 +229,11 @@ Write a summary paragraph answering the research question based on the facts abo
         return sum(f.confidence for f in findings) / len(findings)
 
     def _empty_report(
-        self, query: str, reason: str, elapsed_seconds: float = 0.0
+        self,
+        query: str,
+        reason: str,
+        elapsed_seconds: float = 0.0,
+        sources_fetched: int = 0,  # ← Add this parameter
     ) -> ResearchReport:
         """Return an empty report when no results are found."""
         return ResearchReport(
@@ -224,6 +241,7 @@ Write a summary paragraph answering the research question based on the facts abo
             summary=f"No results found for query: '{query}'. Reason: {reason}",
             findings=[],
             sources=[],
+            sources_fetched=sources_fetched,  # ← Pass through
             overall_confidence=0.0,
             timestamp=datetime.now(timezone.utc),
             research_time_seconds=elapsed_seconds,
