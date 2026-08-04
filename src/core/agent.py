@@ -33,7 +33,11 @@ class ResearchAgent:
         # Reuse the same LLM client from extract_facts for summary generation
         self.llm_client = self.extract_facts.llm_client
 
-    async def run(self, query: str) -> ResearchReport:
+    async def run(
+        self,
+        query: str,
+        max_sources: Optional[int] = None,
+    ) -> ResearchReport:
         """
         Execute the full research pipeline.
 
@@ -48,7 +52,10 @@ class ResearchAgent:
         try:
             # Step 1: Web search
             logger.info(f"Searching for: {query}")
-            search_results = await self.web_search.execute(query)
+            search_results = await self.web_search.execute(
+                query,
+                max_results=max_sources,
+            )
             if not search_results:
                 logger.warning("No search results found")
                 return self._empty_report(

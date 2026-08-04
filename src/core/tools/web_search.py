@@ -58,7 +58,11 @@ class WebSearchTool(BaseTool[str, List[SearchResult]]):
         self.max_results = max_results
         self.include_domains = include_domains or []
 
-    async def execute(self, query: str) -> List[SearchResult]:
+    async def execute(
+        self,
+        query: str,
+        max_results: Optional[int] = None,
+    ) -> List[SearchResult]:
         """
         Execute a web search for the given query.
 
@@ -85,9 +89,12 @@ class WebSearchTool(BaseTool[str, List[SearchResult]]):
 
         # Prepare search parameters
         query = query.strip()
+
+        effective_max = max_results if max_results is not None else self.max_results
+
         search_kwargs = {
             "query": query,
-            "max_results": self.max_results,
+            "max_results": effective_max,
         }
         if self.include_domains:
             search_kwargs["include_domains"] = self.include_domains
