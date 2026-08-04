@@ -104,13 +104,6 @@ class ExtractFactsTool(BaseTool[List[ArticleContent], List[ExtractedFact]]):
     """
 
     def __init__(self, llm_client: GroqLLMClient) -> None:
-        """
-        Initialize the fact extraction tool.
-
-        Args:
-            llm_client: The GroqLLMClient instance to use for LLM calls.
-                       The model is already configured in the client.
-        """
         super().__init__(
             name="extract_facts",
             description="Extract structured facts from article content for verification",
