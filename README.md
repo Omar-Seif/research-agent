@@ -718,3 +718,104 @@ This list is intentionally hardcoded in `logger.py` because it reflects implemen
 **Why:** The project's goal is to learn AI engineering patterns (tool orchestration, retrieval, structured LLM outputs, retries, and exception handling). Adding a fact-checking stage would require another round of LLM calls, significantly increasing latency, token usage, and rate-limit pressure on the free Groq tier while providing relatively little additional learning value.
 
 **Tradeoff:** The final report now uses **extraction confidence** rather than independently verified confidence. This limitation is documented and can be addressed in a future version with a stronger model or dedicated verification pipeline.
+
+---
+
+## Agent Orchestration
+
+**Decision:** Introduce a dedicated `ResearchAgent` to orchestrate the complete research pipeline and centralize report generation, while improving resilience to real-world API failures observed during integration.
+
+### Why
+
+Individual tools are responsible for only one task (search, fetch, or fact extraction). The orchestration layer coordinates the workflow, assembles the final report, and handles failures between stages without coupling the tools together.
+
+### Pipeline
+
+```
+User Query
+    │
+    ▼
+Web Search
+    │
+    ▼
+Fetch Articles
+    │
+    ▼
+Extract Facts
+    │
+    ▼
+Build Sources & Findings
+    │
+    ▼
+Generate Summary
+    │
+    ▼
+Research Report
+```
+
+### Key Design Decisions
+
+- Added a dedicated `ResearchAgent` responsible for coordinating the pipeline.
+- Reused the existing `GroqLLMClient` from `ExtractFactsTool` for summary generation instead of creating a second LLM client.
+- Summary generation uses a normal chat completion (no tool calling), since the desired output is natural-language prose rather than structured data.
+- Overall report confidence is computed as the mean extraction confidence of all findings.
+- Internal pipeline models (`ArticleContent`, `ExtractedFact`) are mapped into API-facing models (`Source`, `Finding`, `ResearchReport`) only at the orchestration layer.
+
+### Graceful Degradation
+
+The agent exits early whenever a stage produces no usable output:
+
+- No search results → empty report.
+- No articles fetched → empty report.
+- No facts extracted → empty report.
+- Summary generation failure → return the report with a fallback summary instead of failing the entire request.
+
+This allows partial failures to degrade gracefully while still returning a valid API response whenever possible.
+
+### Production Issues Discovered
+
+During end-to-end integration, several real API behaviors required additional handling.
+
+#### 1. Groq "reduce the length" errors
+
+Groq sometimes returns oversized requests as an HTTP 400 with a `"reduce the length"` message instead of the expected HTTP 413.
+
+**Decision:** Detect this observed message pattern and translate it into `ContextWindowExceededError`.
+
+This keeps all context-window failures following the same handling path (warning + skip article) regardless of how the API reports them.
+
+#### 2. Blocked article requests
+
+Some websites (e.g. Reuters) returned HTTP 401 instead of HTTP 403 when denying automated access.
+
+**Decision:** Treat both HTTP 401 and HTTP 403 as `BlockedRequestError`.
+
+Both responses represent the same outcome from the application's perspective: the article cannot be accessed and should be skipped.
+
+#### 3. Exception classification
+
+Without the new context-window mapping, oversized requests were incorrectly classified as `InputValidationError`, which was then wrapped as an `UnexpectedError` inside the extraction tool.
+
+**Decision:** Normalize these API responses into `ContextWindowExceededError` so expected operational failures are logged as warnings and skipped instead of appearing as unexpected application errors.
+
+### Benefits
+
+- Clear separation between orchestration and tool responsibilities.
+- Single entry point for the complete research workflow.
+- Graceful handling of partial failures.
+- Consistent domain exception hierarchy despite inconsistent third-party API behavior.
+- More robust production behavior based on real integration testing rather than documented API assumptions.
+
+---
+
+### Decision: Source Filtering
+
+**Decision:** Only include sources in the final report if they contributed at least one extracted finding.
+
+**Why:** Successfully fetching an article does not guarantee successful fact extraction. LLM tool-calling can fail probabilistically (e.g., malformed tool calls after all retries), resulting in articles that were fetched but produced no usable findings. Listing these as report sources would be misleading.
+
+**Observed Behavior:** During testing, the same article (Simple English Wikipedia: Giant Panda) succeeded in one run but failed all three extraction retries in a subsequent run without any code changes. This demonstrates the probabilistic nature of the model's tool-calling reliability. The report now correctly distinguishes:
+- `sources_fetched`: articles successfully fetched and sent for extraction.
+- `sources`: only articles that actually contributed findings.
+
+---

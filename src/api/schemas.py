@@ -101,6 +101,11 @@ class ResearchReport(BaseModel):
     sources: List[Source] = Field(
         ..., description="All sources referenced by the findings (deduplicated)"
     )
+    sources_fetched: int = Field(
+        ...,
+        ge=0,
+        description="Number of sources that were successfully fetched and processed for fact extraction",
+    )
     overall_confidence: float = Field(
         ..., ge=0.0, le=1.0, description="Overall confidence in the report (0.0-1.0)"
     )

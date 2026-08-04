@@ -150,15 +150,13 @@ class ExtractFactsTool(BaseTool[List[ArticleContent], List[ExtractedFact]]):
                 all_facts.extend(facts)
                 logger.debug(f"Extracted {len(facts)} facts from {article.url}")
 
-            except MalformedResponseError as e:
+            except (
+                MalformedResponseError,
+                ContextWindowExceededError,
+                InputValidationError,
+            ) as e:
                 logger.warning(
-                    f"Skipping article {article.url}: malformed response - {e}"
-                )
-                continue
-
-            except ContextWindowExceededError as e:
-                logger.warning(
-                    f"Skipping article {article.url}: context window exceeded - {e}"
+                    f"Skipping article {article.url}: {type(e).__name__} - {e}"
                 )
                 continue
 
@@ -241,10 +239,11 @@ class ExtractFactsTool(BaseTool[List[ArticleContent], List[ExtractedFact]]):
 
             return extracted_facts
 
-        except MalformedResponseError:
-            raise
-
-        except ContextWindowExceededError:
+        except (
+            MalformedResponseError,
+            ContextWindowExceededError,
+            InputValidationError,
+        ):
             raise
 
         except (ExternalAPITimeoutError, ExternalAPIRateLimitError):

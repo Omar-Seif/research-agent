@@ -104,6 +104,7 @@ class FetchArticlesTool(BaseTool[List[str], List[ArticleContent]]):
                 BlockedRequestError,
                 InvalidContentTypeError,
                 ExternalAPITimeoutError,
+                ExternalAPIResponseError,
             ) as e:
                 # Known domain failures — log as warning and continue
                 logger.warning(f"Skipping {url}: {e}")
@@ -253,7 +254,7 @@ class FetchArticlesTool(BaseTool[List[str], List[ArticleContent]]):
             ) from e
 
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 403:
+            if e.response.status_code in [401, 403]:
                 raise BlockedRequestError(
                     message=f"Access forbidden for {url}",
                     tool_name=self.name,

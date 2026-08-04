@@ -1,5 +1,7 @@
 from typing import Optional
 
+from src.utils.text import truncate
+
 
 class ResearchAgentError(Exception):
     """
@@ -35,14 +37,6 @@ class ResearchAgentError(Exception):
         self.user_query = user_query
         super().__init__(message)
 
-    def _truncate(self, text: Optional[str], max_length: int = 100) -> str:
-        """Truncate text to max_length with ellipsis if needed."""
-        if text is None:
-            return ""
-        if len(text) <= max_length:
-            return text
-        return text[:max_length] + "..."
-
     def __str__(self) -> str:
         """Return a detailed string representation for logging."""
         parts = [self.message]
@@ -51,9 +45,9 @@ class ResearchAgentError(Exception):
         if self.request_id:
             parts.append(f"request_id={self.request_id}")
         if self.user_query:
-            parts.append(f"query={self._truncate(self.user_query)}")
+            parts.append(f"query={truncate(self.user_query)}")
         if self.input_snippet:
-            parts.append(f"input={self._truncate(self.input_snippet)}")
+            parts.append(f"input={truncate(self.input_snippet)}")
         return " | ".join(parts)
 
 
