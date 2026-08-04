@@ -37,7 +37,7 @@ class WebSearchTool(BaseTool[str, List[SearchResult]]):
     def __init__(
         self,
         api_key: str,
-        max_results: int = 5,
+        max_results: int = 3,
         include_domains: Optional[List[str]] = None,
     ) -> None:
         """
@@ -45,7 +45,7 @@ class WebSearchTool(BaseTool[str, List[SearchResult]]):
 
         Args:
             api_key: Tavily API key (from settings).
-            max_results: Maximum number of search results to return (default: 5).
+            max_results: Maximum number of search results to return.
             include_domains: Optional list of domains to restrict search results to.
                              If empty, no domain filtering is applied.
         """

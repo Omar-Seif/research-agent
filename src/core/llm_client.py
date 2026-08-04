@@ -167,20 +167,32 @@ class GroqLLMClient:
             ) from e
 
         except openai.BadRequestError as e:
-            # Check if this is a tool-use failure (model produced malformed JSON)
-            is_tool_use_failure = False
+            # Parse the error body to detect specific failure modes
+            error_code = None
+            error_message = ""
             try:
                 error_body = e.response.json() if hasattr(e, "response") else {}
-                error_code = error_body.get("error", {}).get("code")
-                is_tool_use_failure = error_code == "tool_use_failed"
+                error_info = error_body.get("error", {})
+                error_code = error_info.get("code")
+                error_message = error_info.get("message", "")
             except Exception:
-                pass  # Can't parse the error body — treat as a normal bad request
+                pass
 
-            if is_tool_use_failure:
+            # Case 1: Tool-use failure — model produced malformed tool arguments
+            if error_code == "tool_use_failed":
                 raise MalformedResponseError(
                     message=f"Model produced malformed tool arguments: {e.message}",
                     tool_name="llm",
                     input_snippet=str(messages)[:200],
+                ) from e
+
+            # Case 2: Request too large — Groq sometimes returns this as a 400
+            # with a specific message instead of a 413. This is a heuristic based
+            # on observed API behavior, not a documented contract.
+            if "reduce the length" in error_message.lower():
+                raise ContextWindowExceededError(
+                    message=f"Request too long: {error_message}",
+                    tool_name="llm",
                 ) from e
 
             # Default: invalid request parameters
