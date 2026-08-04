@@ -11,7 +11,7 @@ from src.core.tools.extract_facts import ExtractFactsTool
 from src.core.agent import ResearchAgent
 from src.api.routes import router
 from src.api.exception_handlers import add_exception_handlers
-from src.config.logger import get_logger
+from src.config.logger import setup_logging, get_logger
 
 logger = get_logger(__name__)
 
@@ -61,6 +61,9 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Application factory."""
+
+    setup_logging()
+
     app = FastAPI(
         title="Research Agent API",
         description="AI-powered research agent that searches, fetches, and extracts facts",
