@@ -904,3 +904,22 @@ effective_max = min(
 ```
 
 The effective value is then passed through the research pipeline to `ResearchAgent` and `WebSearchTool`, ensuring clients cannot exceed the server-defined limit while still allowing per-request flexibility.
+
+---
+
+## Known Limitation:  Tavily `include_domains`
+
+The application passes Tavily's `include_domains` parameter correctly on every search request.
+
+During testing, however, Tavily occasionally returned results outside the configured allowlist despite the parameter being present. This behavior was reproduced and appears to be an inconsistency in the search provider rather than the application.
+
+The project currently relies on Tavily's implementation and does **not** perform additional client-side filtering, as filtering could discard all returned results without providing replacement sources.
+
+### Query Specificity
+
+Search quality depends heavily on the specificity of the user's query.
+
+Broad or ambiguous queries may retrieve less relevant sources even when domain preferences are configured. The project intentionally leaves query formulation unchanged and delegates ranking decisions to the search provider.
+
+---
+

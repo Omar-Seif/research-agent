@@ -36,6 +36,9 @@ async def lifespan(app: FastAPI):
         max_results=settings.MAX_SEARCH_RESULTS,
         include_domains=settings.SEARCH_INCLUDE_DOMAINS,
     )
+    logger.info(
+        f"WebSearchTool configured with include_domains: {web_search.include_domains}"
+    )
 
     fetch_articles = FetchArticlesTool(
         timeout=settings.FETCH_TIMEOUT,

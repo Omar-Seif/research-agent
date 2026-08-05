@@ -24,6 +24,10 @@ from src.utils.exceptions import (
     UnexpectedError,
 )
 
+from src.config.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class WebSearchTool(BaseTool[str, List[SearchResult]]):
     """
@@ -77,6 +81,9 @@ class WebSearchTool(BaseTool[str, List[SearchResult]]):
 
         try:
             # Execute the search
+            logger.debug(
+                f"Calling Tavily with include_domains={search_kwargs.get('include_domains')}"
+            )
             response = await self.client.search(**search_kwargs)
 
             # Extract and map results
