@@ -4,14 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """
-    Application configuration loaded from environment variables and .env.
-
-    Priority:
-        1. Environment variables
-        2. .env file
-        3. Default values
-    """
+    """Application configuration loaded from environment variables and .env."""
 
     # =========================================================================
     # LLM Configuration

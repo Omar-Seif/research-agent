@@ -8,12 +8,7 @@ from pydantic import BaseModel, Field, HttpUrl
 
 
 class SearchResult(BaseModel):
-    """
-    A single result from a web search.
-
-    Contains just enough information to decide which URLs to fetch.
-    The snippet is a preview from the search engine, not the full content.
-    """
+    """A single result from a web search."""
 
     url: HttpUrl = Field(..., description="The URL of the search result")
     title: Optional[str] = Field(None, description="The title from the search result")
@@ -23,12 +18,7 @@ class SearchResult(BaseModel):
 
 
 class ArticleContent(BaseModel):
-    """
-    The full content of a fetched article.
-
-    This is the "source" — the article itself. Contains the full text
-    that will be passed to the LLM for fact extraction.
-    """
+    """The full content of a fetched article."""
 
     url: HttpUrl = Field(..., description="The URL this content was fetched from")
     title: str = Field(..., description="The actual page title from the HTML")
@@ -40,13 +30,7 @@ class ArticleContent(BaseModel):
 
 
 class ExtractedFact(BaseModel):
-    """
-    A fact extracted from an article by the LLM.
-
-    This is the raw extraction before verification. The extraction_confidence
-    reflects the model's confidence in the extraction quality, not the truth
-    of the statement itself.
-    """
+    """A fact extracted from an article by the LLM."""
 
     id: UUID = Field(
         default_factory=uuid4, description="Unique identifier for this extracted fact"
@@ -73,13 +57,7 @@ class ExtractedFact(BaseModel):
 
 @dataclass
 class ResearchState:
-    """
-    Mutable working state of the research pipeline.
-
-    This is a dataclass because it accumulates results as the pipeline progresses.
-    Each component already has Pydantic validation, so we don't need validation
-    at the container level.
-    """
+    """Mutable working state of the research pipeline."""
 
     query: str
     search_results: List[SearchResult] = field(default_factory=list)

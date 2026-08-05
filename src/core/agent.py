@@ -38,15 +38,7 @@ class ResearchAgent:
         query: str,
         max_sources: Optional[int] = None,
     ) -> ResearchReport:
-        """
-        Execute the full research pipeline.
-
-        Args:
-            query: The user's research question.
-
-        Returns:
-            ResearchReport: The final report with findings, sources, and summary.
-        """
+        """Execute the full research pipeline."""
         start_time = time.perf_counter()
 
         try:
@@ -185,11 +177,7 @@ class ResearchAgent:
             return f"Research found {len(findings)} findings related to: '{query}'. (Summary generation failed.)"
 
     def _build_sources(self, articles: List[ArticleContent]) -> List[Source]:
-        """
-        Build deduplicated Source objects from articles.
-
-        Uses hash-based IDs for stable deduplication.
-        """
+        """Build deduplicated Source objects from articles."""
         source_map: Dict[str, Source] = {}
         for article in articles:
             source_id = generate_source_id(article.url)

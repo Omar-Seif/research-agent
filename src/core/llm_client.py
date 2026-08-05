@@ -32,13 +32,7 @@ class LLMResponse:
 
 
 class GroqLLMClient:
-    """
-    Client for interacting with LLM API.
-
-    Wraps the OpenAI-compatible SDK to provide a clean interface for tools.
-    Handles retries for transient failures and translates SDK exceptions
-    to domain exceptions.
-    """
+    """Client for interacting with Groq's LLM API."""
 
     def __init__(
         self,
@@ -65,13 +59,7 @@ class GroqLLMClient:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[str] = None,  # "auto", "required", or "none"
     ) -> LLMResponse:
-        """
-        Send messages to the LLM and get a response.
-
-        Handles retries for transient failures (timeout, rate limit, network errors).
-        Non-retryable failures (auth, validation) fail immediately.
-        Unexpected exceptions are wrapped in UnexpectedError and fail immediately.
-        """
+        """Send messages to the LLM and get a response."""
         for attempt in range(self.max_retries):
             try:
                 return await self._call_api(messages, tools, tool_choice)
@@ -114,10 +102,7 @@ class GroqLLMClient:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[str] = None,
     ) -> LLMResponse:
-        """
-        Internal method that makes the actual API call and translates
-        SDK exceptions to custom exceptions.
-        """
+        """Internal method that makes the actual API call and translates SDK exceptions to custom exceptions."""
         try:
             # Build kwargs conditionally — don't send None values
             kwargs = {
