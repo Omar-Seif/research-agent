@@ -819,3 +819,107 @@ Without the new context-window mapping, oversized requests were incorrectly clas
 - `sources`: only articles that actually contributed findings.
 
 ---
+
+## FastAPI API Layer
+
+This step exposed the research agent as a REST API using FastAPI while keeping the project's layered architecture intact.
+
+### Application Factory
+
+The API uses an application factory (`create_app()`) together with FastAPI's lifespan context manager.
+
+The lifespan hook is responsible for:
+
+- Creating the shared `GroqLLMClient`
+- Constructing all tool instances
+- Building a single `ResearchAgent`
+- Storing long-lived dependencies on `app.state`
+- Cleaning up resources (closing the article fetcher's HTTP client) during shutdown
+
+This ensures expensive resources are created once at startup instead of once per request.
+
+### Route Separation
+
+The API is split into dedicated modules:
+
+- `main.py`
+  - application creation
+  - dependency composition
+  - middleware registration
+  - lifespan management
+
+- `routes.py`
+  - HTTP endpoints
+  - request validation
+  - invoking the `ResearchAgent`
+  - returning typed responses
+
+- `exception_handlers.py`
+  - centralized exception → HTTP status mapping
+  - consistent JSON error responses
+  - logging
+
+This keeps the API layer focused and avoids mixing routing with application setup.
+
+### Exception Mapping
+
+The domain layer never raises HTTP exceptions.
+
+Instead, custom project exceptions are translated into HTTP responses only inside the API layer.
+
+Examples include:
+
+- `InputValidationError` → 400
+- `ExternalAPIRateLimitError` → 429
+- `ExternalAPITimeoutError` → 504
+- `ContextWindowExceededError` → 413
+- `MalformedResponseError` → 502
+- unexpected internal errors → 500
+
+This keeps the core research pipeline independent of FastAPI.
+
+### CORS
+
+CORS middleware was added to support future frontend applications.
+
+Allowed origins are configured through environment variables, allowing different frontend URLs without changing code.
+
+### API Prefix
+
+All endpoints, OpenAPI documentation, and Swagger UI are served under a configurable API prefix (`API_PREFIX`), making deployment behind reverse proxies or gateways straightforward.
+
+---
+
+### Wiring `max_sources`
+
+The API supports an optional `max_sources` parameter, allowing clients to request fewer sources for faster responses.
+
+To enforce server limits, the requested value is clamped against the configured maximum:
+
+```python
+effective_max = min(
+    request.max_sources,
+    settings.MAX_SEARCH_RESULTS,
+)
+```
+
+The effective value is then passed through the research pipeline to `ResearchAgent` and `WebSearchTool`, ensuring clients cannot exceed the server-defined limit while still allowing per-request flexibility.
+
+---
+
+## Known Limitation:  Tavily `include_domains`
+
+The application passes Tavily's `include_domains` parameter correctly on every search request.
+
+During testing, however, Tavily occasionally returned results outside the configured allowlist despite the parameter being present. This behavior was reproduced and appears to be an inconsistency in the search provider rather than the application.
+
+The project currently relies on Tavily's implementation and does **not** perform additional client-side filtering, as filtering could discard all returned results without providing replacement sources.
+
+### Query Specificity
+
+Search quality depends heavily on the specificity of the user's query.
+
+Broad or ambiguous queries may retrieve less relevant sources even when domain preferences are configured. The project intentionally leaves query formulation unchanged and delegates ranking decisions to the search provider.
+
+---
+

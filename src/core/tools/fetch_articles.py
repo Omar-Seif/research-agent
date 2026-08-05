@@ -71,18 +71,7 @@ class FetchArticlesTool(BaseTool[List[str], List[ArticleContent]]):
         await self.close()
 
     async def execute(self, input_data: List[str]) -> List[ArticleContent]:
-        """
-        Fetch and extract article content from a list of URLs.
-
-        Args:
-            input_data: List of URLs to fetch.
-
-        Returns:
-            List[ArticleContent]: Article content for each successfully fetched URL.
-
-        Raises:
-            InputValidationError: If input_data is None or not a list.
-        """
+        """Fetch and extract article content from a list of URLs."""
         if not isinstance(input_data, list):
             raise InputValidationError(
                 message="Input must be a list of URLs",
@@ -121,12 +110,7 @@ class FetchArticlesTool(BaseTool[List[str], List[ArticleContent]]):
         return articles
 
     async def _fetch_single(self, url: str) -> Optional[ArticleContent]:
-        """
-        Fetch and extract content from a single URL.
-
-        Returns ArticleContent on success, None if content was empty.
-        Raises exceptions for fatal failures (HTTP errors, timeouts, etc.).
-        """
+        """Fetch and extract content from a single URL."""
         # Validate URL
         if not url or not url.strip():
             logger.warning(f"Skipping empty URL")

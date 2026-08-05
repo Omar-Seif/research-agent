@@ -4,14 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """
-    Application configuration loaded from environment variables and .env.
-
-    Priority:
-        1. Environment variables
-        2. .env file
-        3. Default values
-    """
+    """Application configuration loaded from environment variables and .env."""
 
     # =========================================================================
     # LLM Configuration
@@ -44,6 +37,12 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # =========================================================================
+    # Server Configuration
+    # =========================================================================
+
+    PORT: int = 8000
+
+    # =========================================================================
     # Logging
     # =========================================================================
 
@@ -57,6 +56,16 @@ class Settings(BaseSettings):
     REQUEST_TIMEOUT: int = 30
     MAX_RETRIES: int = 3
     RETRY_DELAY: int = 1
+
+    # =============================================================================
+    # Article Fetching Configuration
+    # =============================================================================
+
+    FETCH_TIMEOUT: int = 30  # Per-request timeout for article fetching
+    MAX_CONTENT_BYTES: int = 10 * 1024 * 1024  # 10MB
+    USER_AGENT: str = (
+        "ResearchAgent/1.0 (+https://github.com/Omar-Seif/research-agent.git)"
+    )
 
     # =========================================================================
 

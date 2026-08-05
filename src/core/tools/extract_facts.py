@@ -104,13 +104,6 @@ class ExtractFactsTool(BaseTool[List[ArticleContent], List[ExtractedFact]]):
     """
 
     def __init__(self, llm_client: GroqLLMClient) -> None:
-        """
-        Initialize the fact extraction tool.
-
-        Args:
-            llm_client: The GroqLLMClient instance to use for LLM calls.
-                       The model is already configured in the client.
-        """
         super().__init__(
             name="extract_facts",
             description="Extract structured facts from article content for verification",
@@ -118,20 +111,7 @@ class ExtractFactsTool(BaseTool[List[ArticleContent], List[ExtractedFact]]):
         self.llm_client = llm_client
 
     async def execute(self, input_data: List[ArticleContent]) -> List[ExtractedFact]:
-        """
-        Extract facts from a list of articles.
 
-        Processes each article individually. Skips failed articles and continues.
-
-        Args:
-            input_data: List of ArticleContent objects to extract facts from.
-
-        Returns:
-            List[ExtractedFact]: All facts extracted from all articles.
-
-        Raises:
-            InputValidationError: If input_data is not a list of ArticleContent.
-        """
         if not isinstance(input_data, list):
             raise InputValidationError(
                 message="Input must be a list of ArticleContent objects",
@@ -180,21 +160,7 @@ class ExtractFactsTool(BaseTool[List[ArticleContent], List[ExtractedFact]]):
     async def _extract_from_article(
         self, article: ArticleContent
     ) -> List[ExtractedFact]:
-        """
-        Extract facts from a single article.
-
-        Args:
-            article: The ArticleContent to extract facts from.
-
-        Returns:
-            List[ExtractedFact]: Facts extracted from the article, or empty list if none found.
-
-        Raises:
-            MalformedResponseError: If the LLM response cannot be parsed.
-            ContextWindowExceededError: If the article exceeds the context window.
-            ExternalAPITimeoutError: If the LLM request times out.
-            ExternalAPIRateLimitError: If the rate limit is exceeded.
-        """
+        """Extract facts from a single article."""
         # Validate article content
         if not article.content or len(article.content.strip()) < 100:
             logger.warning(f"Article content too short for extraction: {article.url}")
@@ -259,18 +225,7 @@ class ExtractFactsTool(BaseTool[List[ArticleContent], List[ExtractedFact]]):
     async def _parse_extraction_response(
         self, response: LLMResponse
     ) -> List[Dict[str, Any]]:
-        """
-        Parse the tool-call response into a list of raw fact dictionaries.
-
-        Args:
-            response: The LLMResponse from the client. Should contain tool_calls.
-
-        Returns:
-            List[Dict[str, Any]]: Raw fact dictionaries from the tool call.
-
-        Raises:
-            MalformedResponseError: If the response cannot be parsed.
-        """
+        """Parse the tool-call response into a list of raw fact dictionaries."""
         if not response.tool_calls:
             raise MalformedResponseError(
                 message="LLM did not call the extract_facts tool despite tool_choice='required'",

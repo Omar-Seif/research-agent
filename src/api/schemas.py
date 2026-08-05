@@ -6,12 +6,7 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 
 class ResearchRequest(BaseModel):
-    """
-    Request payload for the research endpoint.
-
-    The model is always controlled by settings — this is just the user query
-    and optional parameters for controlling the research process.
-    """
+    """Request payload for the research endpoint."""
 
     query: str = Field(
         ...,
@@ -43,8 +38,6 @@ class ResearchRequest(BaseModel):
 class Source(BaseModel):
     """
     A source referenced in the research report.
-
-    This is the API-facing representation of an ArticleContent.
     The ID is a stable hash of the URL for deterministic deduplication.
     """
 
@@ -59,12 +52,7 @@ class Source(BaseModel):
 
 
 class Finding(BaseModel):
-    """
-    A verified finding from the research process.
-
-    References sources by their stable IDs rather than by URL or position,
-    making the reference robust to source reordering or deduplication.
-    """
+    """A verified finding from the research process."""
 
     statement: str = Field(
         ..., description="The factual statement discovered through research"
@@ -84,12 +72,7 @@ class Finding(BaseModel):
 
 
 class ResearchReport(BaseModel):
-    """
-    The complete research report returned to the API client.
-
-    Contains the original query, a human-readable summary, a list of findings,
-    deduplicated sources, and metadata about the research process.
-    """
+    """The complete research report returned to the API client."""
 
     query: str = Field(..., description="The original research question")
     summary: str = Field(

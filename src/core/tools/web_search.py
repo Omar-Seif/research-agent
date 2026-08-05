@@ -24,12 +24,15 @@ from src.utils.exceptions import (
     UnexpectedError,
 )
 
+from src.config.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class WebSearchTool(BaseTool[str, List[SearchResult]]):
     """
     Tool that searches the web using Tavily's API.
 
-    Uses Tavily's async client for non-blocking search requests.
     Returns structured search results with URL, title, and snippet.
     Supports domain filtering via include_domains.
     """
@@ -40,15 +43,7 @@ class WebSearchTool(BaseTool[str, List[SearchResult]]):
         max_results: int = 3,
         include_domains: Optional[List[str]] = None,
     ) -> None:
-        """
-        Initialize the web search tool.
 
-        Args:
-            api_key: Tavily API key (from settings).
-            max_results: Maximum number of search results to return.
-            include_domains: Optional list of domains to restrict search results to.
-                             If empty, no domain filtering is applied.
-        """
         super().__init__(
             name="web_search",
             description="Search the web for information relevant to the user query. Returns URLs, titles, and content snippets.",
@@ -58,23 +53,12 @@ class WebSearchTool(BaseTool[str, List[SearchResult]]):
         self.max_results = max_results
         self.include_domains = include_domains or []
 
-    async def execute(self, query: str) -> List[SearchResult]:
-        """
-        Execute a web search for the given query.
-
-        Args:
-            query: The search query string.
-
-        Returns:
-            List[SearchResult]: A list of search results, or an empty list if none found.
-
-        Raises:
-            InputValidationError: If query is empty or whitespace-only.
-            ConfigurationError: If API key is missing or invalid.
-            ExternalAPITimeoutError: If the request times out.
-            ExternalAPIRateLimitError: If rate limit is exceeded.
-            ExternalAPIResponseError: For other API errors.
-        """
+    async def execute(
+        self,
+        query: str,
+        max_results: Optional[int] = None,
+    ) -> List[SearchResult]:
+        """Execute a web search for the given query."""
         # Validate input
         if not query or not query.strip():
             raise InputValidationError(
@@ -85,15 +69,21 @@ class WebSearchTool(BaseTool[str, List[SearchResult]]):
 
         # Prepare search parameters
         query = query.strip()
+
+        effective_max = max_results if max_results is not None else self.max_results
+
         search_kwargs = {
             "query": query,
-            "max_results": self.max_results,
+            "max_results": effective_max,
         }
         if self.include_domains:
             search_kwargs["include_domains"] = self.include_domains
 
         try:
             # Execute the search
+            logger.debug(
+                f"Calling Tavily with include_domains={search_kwargs.get('include_domains')}"
+            )
             response = await self.client.search(**search_kwargs)
 
             # Extract and map results

@@ -33,22 +33,21 @@ class ResearchAgent:
         # Reuse the same LLM client from extract_facts for summary generation
         self.llm_client = self.extract_facts.llm_client
 
-    async def run(self, query: str) -> ResearchReport:
-        """
-        Execute the full research pipeline.
-
-        Args:
-            query: The user's research question.
-
-        Returns:
-            ResearchReport: The final report with findings, sources, and summary.
-        """
+    async def run(
+        self,
+        query: str,
+        max_sources: Optional[int] = None,
+    ) -> ResearchReport:
+        """Execute the full research pipeline."""
         start_time = time.perf_counter()
 
         try:
             # Step 1: Web search
             logger.info(f"Searching for: {query}")
-            search_results = await self.web_search.execute(query)
+            search_results = await self.web_search.execute(
+                query,
+                max_results=max_sources,
+            )
             if not search_results:
                 logger.warning("No search results found")
                 return self._empty_report(
@@ -178,11 +177,7 @@ class ResearchAgent:
             return f"Research found {len(findings)} findings related to: '{query}'. (Summary generation failed.)"
 
     def _build_sources(self, articles: List[ArticleContent]) -> List[Source]:
-        """
-        Build deduplicated Source objects from articles.
-
-        Uses hash-based IDs for stable deduplication.
-        """
+        """Build deduplicated Source objects from articles."""
         source_map: Dict[str, Source] = {}
         for article in articles:
             source_id = generate_source_id(article.url)

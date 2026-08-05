@@ -5,18 +5,7 @@ from src.config.settings import settings
 
 
 def setup_logging() -> None:
-    """
-    Configure the root logger with console and file handlers.
-
-    Console handler: Writes to stdout.
-    File handler: Writes to the configured path with rotation at 10MB and 5 backups.
-
-    If the file handler cannot be created, the app degrades gracefully to console-only logging with a warning.
-
-    Usage:
-        from src.config.logger import setup_logging
-        setup_logging()
-    """
+    """Configure the root logger with console and file handlers."""
     # Get the root logger (no arguments = root logger)
     root_logger = logging.getLogger()
 
@@ -72,16 +61,5 @@ def setup_logging() -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
-    """
-    Get a named logger instance.
-
-    This wrapper exists to give a consistent import pattern and a future
-    place to inject custom behavior (e.g., adding a request_id filter).
-
-    Args:
-        name: Usually __name__ from the calling module.
-
-    Returns:
-        logging.Logger: A configured logger instance.
-    """
+    """Get a named logger instance."""
     return logging.getLogger(name)

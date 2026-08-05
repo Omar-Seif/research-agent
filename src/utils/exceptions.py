@@ -4,23 +4,7 @@ from src.utils.text import truncate
 
 
 class ResearchAgentError(Exception):
-    """
-    Base class for all custom exceptions in the research agent system.
-
-    Carries common context fields that can be added incrementally as errors
-    propagate up the call stack. Fields are optional because low-level code
-    doesn't always have access to higher-level context like request IDs.
-
-    Uses Python's native exception chaining (raise ... from e) to preserve
-    the underlying cause instead of a manual field.
-
-    Args:
-        message: Human-readable error message.
-        tool_name: Name of the tool that was executing when the error occurred.
-        input_snippet: Truncated input being processed (short enough to log safely).
-        request_id: Unique ID for the request, added at the orchestration layer.
-        user_query: Original user query, added at the orchestration layer.
-    """
+    """Base class for all custom exceptions in the research agent system."""
 
     def __init__(
         self,
@@ -79,9 +63,6 @@ class ExternalAPIRateLimitError(ResearchAgentError):
 
     Applies to: Groq API, search API, or any external API that returns
     a rate limit response (HTTP 429 or similar).
-
-    Args:
-        retry_after: Seconds to wait before retrying, if the API provides it.
     """
 
     def __init__(
