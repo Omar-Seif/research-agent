@@ -923,3 +923,7 @@ Broad or ambiguous queries may retrieve less relevant sources even when domain p
 
 ---
 
+## Testing: "Planned but not completed."
+
+Automated tests currently focus on WebSearchTool, demonstrating the project's testing approach using pytest, pytest-asyncio, and AsyncMock for asynchronous code and external SDK mocking. The remaining components were primarily validated through extensive end-to-end integration testing against the real Groq and Tavily APIs during development. Full automated coverage of the remaining modules is a known future improvement.
+

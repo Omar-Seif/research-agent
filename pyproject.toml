@@ -7,3 +7,8 @@ requires-python = ">=3.12,<3.13"
 authors = [
     { name = "Omar Farahat", email = "omarhseif04@gmail.com" }
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
