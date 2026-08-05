@@ -1,950 +1,294 @@
 # Research Agent
 
-> An AI-powered research agent that takes user queries, invokes multiple tools in sequence, and returns structured, reliable findings.
+An AI-powered research agent that takes a natural-language query, searches the web, fetches and reads relevant articles, extracts structured facts using an LLM, and returns a structured JSON research report with findings, sources, and confidence scores.
+
+Built as a learning project focused on AI system orchestration: tool design, dependency injection, structured LLM outputs, retry/error-handling strategy, and production-style API design — not just "get it working."
 
 ---
 
-# 🎯 Current Status
+## Quick Start
 
-**Phase:** Project Setup & Infrastructure
+### Prerequisites
+- Python 3.12
+- A [Groq API key](https://console.groq.com) (free tier)
+- A [Tavily API key](https://tavily.com) (free tier)
+- Docker (optional, for containerized run)
 
-The project is currently in its setup phase. The initial foundation has been completed, including:
-
-- ✅ Project structure defined
-- ✅ Development environment configured
-- ✅ API client integration established
-- ✅ Logging system configured
-
----
-
-# 🛠️ Setup Instructions
-
-## Prerequisites
-
-Before getting started, ensure you have:
-
-- Python **3.12**
-- Miniconda or Anaconda
-- A **Groq API Key** (free tier available)
-
----
-
-## Installation
-
-### 1. Clone the Repository
+### Run locally
 
 ```bash
 git clone https://github.com/Omar-Seif/research-agent.git
 cd research-agent
-```
 
-### 2. Create and Activate a Conda Environment
-
-```bash
 conda create -n research-agent python=3.12
 conda activate research-agent
-```
 
-### 3. Install Dependencies
-
-```bash
 pip install -r requirements.txt
+cp .env.example .env
+# edit .env and add your GROQ_API_KEY and TAVILY_API_KEY
+
+python -m uvicorn src.api.main:app --reload
 ```
 
-### 4. Configure Environment Variables
+### Run with Docker
 
 ```bash
 cp .env.example .env
+# edit .env with your API keys
+docker compose up --build
 ```
 
-Open the `.env` file and add your API key:
+### Try it
 
-```env
-GROQ_API_KEY=your-groq-api-key
+```bash
+curl http://localhost:8000/api/health
+
+curl -X POST http://localhost:8000/api/research \
+  -H "Content-Type: application/json" \
+  -d '{"query": "giant panda diet", "max_sources": 3}'
 ```
 
----
-
-# 📁 Project Structure
-
-```text
-research-agent/
-├── docker/
-│   └── dockerfile              # Container definition (future use)
-│
-├── src/
-│   ├── api/                    # REST API layer
-│   │   ├── routes/             # API endpoints
-│   │   └── schemas/            # Pydantic models
-│   │
-│   ├── core/                   # Core business logic
-│   │   └── tools/              # Tool implementations
-│   │
-│   ├── config/                 # Configuration management
-│   └── utils/                  # Shared utilities
-│
-├── tests/
-│   └── fixtures/               # Test data
-│
-├── logs/
-│   └── .gitkeep                # Preserve logs directory
-│
-├── .env.example                # Environment template
-├── docker-compose.yml          # Multi-container setup (future use)
-├── pyproject.toml              # Project metadata
-├── requirements.txt            # Python dependencies
-└── README.md                   # Project documentation
-```
+Interactive API docs (Swagger UI) are available at `http://localhost:8000/api/docs` once the server is running.
 
 ---
 
-# 🏗️ Architecture Decisions
+## Pipeline Overview
 
-## Decision: Groq over OpenAI
+User Query  
+      │     
+      ▼     
+Web Search (Tavily)     
+      │     
+      ▼     
+Fetch Articles (httpx + trafilatura)      
+      │     
+      ▼     
+Extract Facts (Groq LLM, forced tool-calling)   
+      │     
+      ▼     
+Build Sources & Findings      
+      │     
+      ▼     
+Generate Summary (Groq LLM, plain completion)   
+      │     
+      ▼     
+Research Report   
 
-### Context
 
-The project requires LLM inference while keeping development costs low.
-
-### Decision
-
-Use the **Groq API** through the **OpenAI-compatible Python SDK**.
-
-### Reasoning
-
-- Groq's free tier provides sufficient quota for development.
-- The OpenAI SDK supports custom `base_url`, allowing easy provider switching.
-- Migrating to OpenAI (or another compatible provider) later only requires a configuration change.
-
-### Current Implementation
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="https://api.groq.com/openai/v1",
-    api_key="your-groq-api-key"
-)
-```
+Each stage is a standalone, independently testable `BaseTool` implementation. The `ResearchAgent` orchestrates the sequence, degrades gracefully on partial failures, and assembles the final report.
 
 ---
 
-## Decision: Exception Hierarchy
+## Architecture Decisions
 
-#### Context
+### Groq over OpenAI
+LLM inference uses Groq's free tier via the OpenAI-compatible SDK (`base_url` override). This keeps the codebase provider-agnostic — switching providers is a configuration change, not a rewrite.
 
-The research agent executes a multi-stage pipeline consisting of tools such as web search, article fetching, fact extraction, and fact checking. Although each tool performs different work, they often fail in the same ways (timeouts, rate limits, invalid responses, etc.).
+### Exception Hierarchy
+Rather than one exception class per tool, exceptions are organized **by failure type**, with a single `ResearchAgentError` root. Context (`tool_name`, `input_snippet`, etc.) is carried as instance data, not encoded into the class hierarchy. Native exception chaining (`raise ... from e`) preserves original causes instead of a manual "underlying cause" field.
 
-Instead of creating separate exception classes for every tool, the project organizes exceptions by **failure type**.
-
-#### Decision
-
-The exception hierarchy is built around a shared base class:
-
-- `ResearchAgentError` serves as the root of all custom exceptions.
-- Tool-specific information (such as `tool_name`) is stored as data on the exception instance instead of being encoded in the class hierarchy.
-- Native Python exception chaining (`raise ... from e`) is used to preserve the original cause of failures.
-
-#### Exceptions Hierarchy
-
-```text
-ResearchAgentError
-├── ConfigurationError
-├── ExternalAPITimeoutError
-├── ExternalAPIRateLimitError
-├── ExternalAPIResponseError
-│   ├── MalformedResponseError
-│   ├── UnexpectedStatusError
-│   └── ContextWindowExceededError
-├── InputValidationError
-├── ToolDependencyError
-├── FetchContentError
-│   ├── DeadLinkError
-│   ├── BlockedRequestError
-│   └── InvalidContentTypeError
-├── OrchestrationError
-│   ├── WorkflowInterruptedError
-│   └── ResourceExhaustedError
-└── UnexpectedError
-```
+ResearchAgentError      
+├── ConfigurationError    
+├── ExternalAPITimeoutError         
+├── ExternalAPIRateLimitError       
+├── ExternalAPIResponseError        
+│ ├── MalformedResponseError        
+│ ├── UnexpectedStatusError         
+│ └── ContextWindowExceededError          
+├── InputValidationError            
+├── ToolDependencyError       
+├── FetchContentError         
+│ ├── DeadLinkError           
+│ ├── BlockedRequestError           
+│ └── InvalidContentTypeError       
+├── OrchestrationError        
+│ ├── WorkflowInterruptedError            
+│ └── ResourceExhaustedError        
+└── UnexpectedError           
 
 
----
+### Internal Models vs. API Schemas
+Two distinct model layers exist to decouple pipeline internals from the public contract:
+
+- `src/core/models.py` — internal pipeline state (`SearchResult`, `ArticleContent`, `ExtractedFact`, `ResearchState`)
+- `src/api/schemas.py` — public request/response contracts (`ResearchRequest`, `Source`, `Finding`, `ResearchReport`)
+
+ResearchRequest         
+      │           
+      ▼           
+─────────────────      
+Internal Pipeline       
+─────────────────        
+SearchResult → ArticleContent → ExtractedFact → ResearchState           
+─────────────────        
+      │           
+      ▼           
+ResearchReport          
 
 
-## Decision: Separate Internal Pipeline Models from API Models
+Sources are assigned deterministic, hash-based IDs (first 16 hex chars of a SHA-256 hash of the canonical URL) enabling stable deduplication and cross-referencing without positional-index fragility.
 
-#### Context
+### GroqLLMClient
+A single class wraps all LLM communication: retries with exponential backoff + jitter, SDK-to-domain exception translation, and a uniform `LLMResponse` model returned to callers instead of raw SDK objects. Every tool that needs LLM inference depends on this abstraction, not on `openai` directly.
 
-The research agent processes data through several stages—search, content fetching, fact extraction, and fact verification. Each stage requires data structures tailored to its own responsibilities, while the API should expose a stable, consumer-friendly response format.
-
-Using the same models for both internal processing and external responses would tightly couple the pipeline implementation to the public API, making future changes more difficult.
-
-#### Decision
-
-The project uses two distinct model layers:
-
-- **Internal models** (`src/core/models.py`) represent the working state of the research pipeline.
-- **API models** (`src/api/schemas.py`) define the public request and response contracts exposed by the REST API.
-- Sources are assigned deterministic, hash-based identifiers using the first 16 hexadecimal characters of a SHA-256 hash of the canonical URL. These IDs are used for source deduplication and cross-referencing findings without exposing implementation details.
-
-#### Architecture
-
-```text
-Client Request
-      │
-      ▼
-ResearchRequest
-      │
-      ▼
-──────────────────────────────────────
- Internal Pipeline
-──────────────────────────────────────
-SearchResult
-      │
-      ▼
-ArticleContent
-      │
-      ▼
-ExtractedFact
-      │
-      ▼
-FactCheckResult
-      │
-      ▼
-ResearchState
-──────────────────────────────────────
-      │
-      ▼
-ResearchReport
-      │
-      ▼
-Client Response
-```
-
-### Context
-
-**Separation of concerns**
-
-Internal models are optimized for processing and orchestration, while API models are optimized for stability and usability. Changes to the internal pipeline do not require changes to the public API.
-
-**Stable API contract**
-
-Clients interact only with API schemas, allowing the implementation of the research pipeline to evolve without introducing breaking API changes.
-
-**Explicit data transformations**
-
-Each pipeline stage produces a well-defined model, making data flow easier to understand, validate, and test.
+### Generic `BaseTool[InputT, OutputT]`
+All pipeline tools share a common `execute()` contract via Python generics, giving each tool a strongly-typed input/output signature without forcing artificial input/output uniformity across genuinely different tools.
 
 ---
 
-## Decision: Introduce a `GroqLLMClient` that encapsulates all communication with the LLM behind a single interface.
+## Individual Tools
 
-**Why**
+### Web Search (`WebSearchTool`)
+- Uses Tavily's async client, returns internal `SearchResult` models (provider details never leak downstream).
+- Domain allowlisting via `SEARCH_INCLUDE_DOMAINS` (config, not hardcoded).
+- Tavily SDK exceptions are translated into the project's domain exception hierarchy.
 
-Multiple pipeline components require LLM inference (fact extraction, verification, summarization). Rather than allowing each tool to depend directly on the OpenAI SDK, all requests pass through a single client responsible for provider communication.
+### Fetch Articles (`FetchArticlesTool`)
+- `httpx.AsyncClient` for fetching, `trafilatura` for main-content extraction (deliberately not hand-rolled with BeautifulSoup — the project's learning goal is orchestration, not HTML-boilerplate-stripping).
+- Streams responses in chunks with a size cap, checking `Content-Length` first and aborting mid-stream if needed — avoids downloading huge or misreported-size pages.
+- Per-URL failures (dead links, blocked requests, wrong content type) are logged and skipped; one bad URL never kills the batch.
 
-**Responsibilities**
+### Extract Facts (`ExtractFactsTool`)
+The reasoning stage: takes `List[ArticleContent]`, returns `List[ExtractedFact]` via an LLM.
 
-- Expose a single async `complete()` interface.
-- Manage communication with the OpenAI-compatible API.
-- Handle retries and exponential backoff for transient failures.
-- Translate SDK exceptions into project-specific exceptions.
-- Return an internal `LLMResponse` model instead of SDK objects.
-- Support optional function/tool calling.
+- **One LLM call per article**, not batched — keeps source attribution unambiguous and prevents one large article from blocking others.
+- **Forced tool-calling** (`tool_choice="required"`) instead of prompt-only JSON — eliminates the class of failures caused by markdown fences, stray prose, or malformed freeform JSON.
+- **Retryable vs. non-retryable failures are distinguished explicitly**:
 
-**Workflow**
+  | Failure | Cause | Exception | Retried? |
+  |---|---|---|---|
+  | Rate limit | HTTP 429 | `ExternalAPIRateLimitError` | ✅ |
+  | Timeout | Network/API | `ExternalAPITimeoutError` | ✅ |
+  | Malformed tool call | Invalid function arguments | `MalformedResponseError` | ✅ |
+  | Context window exceeded | HTTP 413 *or* HTTP 400 with a length-related message | `ContextWindowExceededError` | ❌ |
+  | Invalid request | HTTP 400 (other) | `InputValidationError` | ❌ |
 
-```text
-Pipeline Tool
-      │
-      ▼
-GroqLLMClient
-      │
-      ▼
-AsyncOpenAI SDK
-      │
-      ▼
-Groq API
-      │
-      ▼
-LLMResponse
-      │
-      ▼
-Pipeline Tool
-```
+- **Graceful degradation**: a failed article is logged and skipped; the pipeline continues with whatever succeeded.
 
-**Benefits**
+**Production issue discovered:** Groq/Llama occasionally wraps valid JSON in a non-standard `<function=...>...</function>` tag instead of the expected tool-call format, causing an HTTP 400 (`tool_use_failed`). This is a *probabilistic* model behavior, not a deterministic bug — retrying the same request can succeed. Observed directly: the same article succeeded in one run and exhausted all 3 retries in the very next run, with no code changes between them. This is treated as retryable; genuinely non-retryable failures (bad input, context-window overflow) are not retried, since retrying identical oversized input can never succeed.
 
-- Decouples business logic from the SDK.
-- Centralizes retry and error handling.
-- Makes provider changes low-cost through configuration.
-- Keeps the rest of the application working with domain models rather than SDK types.
+**Known limitation:** large articles are currently skipped, not chunked. Chunking + merging facts across chunks is a natural future extension.
 
+### Fact-Checking Stage — Cut from Scope
+A `FactCheckTool` was designed but deliberately removed before implementation. Verifying each extracted fact would require a second LLM call per fact, roughly doubling LLM load on top of an already rate-limit-constrained free tier, for a feature that added latency without teaching new orchestration concepts. **Tradeoff, stated plainly:** `Finding.confidence` in the final report reflects the LLM's *extraction* confidence ("did I pull this correctly from the text"), not independent *truth* verification. This is documented, not hidden.
 
 ---
 
-## Decision: Generic Base Tool Abstraction
+## Agent Orchestration (`ResearchAgent`)
 
-**Context:** Every research tool follows the same lifecycle (validate input → execute → return output) but operates on different data types.
+Coordinates the full pipeline and assembles the final `ResearchReport`.
 
-**Decision:** Introduced a generic `BaseTool[InputT, OutputT]` abstract class that defines a common `execute()` contract while allowing each tool to specify its own strongly typed input and output models.
+- Reuses the same `GroqLLMClient` instance from `ExtractFactsTool` for summary generation, rather than constructing a second client.
+- Summary generation uses a plain chat completion (no tool-calling) — prose output doesn't benefit from forced structured calling, and this avoids re-exposing the same tool-call reliability issue for a stage that doesn't need it.
+- `overall_confidence` = mean of all findings' extraction confidence.
+- **Sources are filtered to only those that actually contributed a finding** — a successfully fetched article can still yield zero facts (probabilistic LLM failure), and listing it as a "source" of a report it didn't contribute to would be misleading. The report distinguishes `sources_fetched` (successfully fetched) from `sources` (actually used).
+- Early-exit paths (no search results / no articles fetched / no facts extracted) return a well-formed, minimally-valid empty report rather than propagating an exception for what is normal pipeline behavior.
 
-**Rationale:**
-- Enforces a consistent interface across all pipeline tools.
-- Uses Python generics for type safety instead of relying on `Any`.
-- Makes tools interchangeable within the orchestration pipeline while preserving clear input/output contracts.
-- Centralizes shared behavior without constraining tool-specific implementations.
-
----
-
-## Decision: External Search Provider Configuration
-
-**Context:** The research agent requires a web search capability to retrieve relevant sources before article fetching and fact extraction.
-
-**Decision:** Integrate Tavily as the search provider and manage all search behavior through configuration. Search-specific settings (API key, maximum search results, and included domains) are defined in the application's configuration layer rather than hardcoded in the search tool.
-
-**Rationale:**
-- Separates application logic from deployment-specific configuration.
-- Makes the search provider easy to configure without code changes.
-- Uses Tavily's native domain filtering instead of implementing custom filtering logic.
-- Restricts searches to a curated set of high-quality domains to improve source reliability.
+**Production issues discovered during integration:**
+- Groq sometimes signals "request too large" via **HTTP 400 with a message pattern** (`"reduce the length..."`) instead of the expected HTTP 413 — both are now normalized to `ContextWindowExceededError`.
+- Some sites (e.g., Reuters) return **HTTP 401** rather than 403 when blocking automated fetches — both now map to `BlockedRequestError`.
 
 ---
 
-# Individual Tools
+## API Layer (FastAPI)
 
-## Web Search Tool  
+- **Application factory** (`create_app()`) + `lifespan` context manager: expensive dependencies (`GroqLLMClient`, all tools, the `ResearchAgent`) are constructed **once at startup**, stored on `app.state`, and reused across every request — not rebuilt per-request.
+- **Layered structure**: `main.py` (composition/startup), `routes.py` (HTTP endpoints only), `exception_handlers.py` (domain exception → HTTP status mapping).
+- **Domain exceptions never become HTTP exceptions inside route handlers.** Routes let exceptions propagate; registered FastAPI exception handlers do the translation. (Earlier draft had a bug where the route's own try/except silently converted every domain exception to a generic 500, bypassing the mapping entirely — fixed.)
 
-### Pipeline Position
+  | Exception | HTTP Status |
+  |---|---|
+  | `InputValidationError` | 400 |
+  | `ExternalAPIRateLimitError` | 429 |
+  | `ExternalAPITimeoutError` | 504 |
+  | `ContextWindowExceededError` | 413 |
+  | `MalformedResponseError` | 502 |
+  | `ConfigurationError` / `UnexpectedError` / unmapped | 500 |
 
-```text
-Web Search        ← This tool
-      │
-      ▼
-Fetch Articles
-      │
-      ▼
-Extract Facts   
-      │
-      ▼
-Fact Check
-      │
-      ▼
-Generate Report
-```
-
-Implemented the first concrete pipeline tool: `WebSearchTool`.
-
-**Design decisions:**
-- Uses Tavily's asynchronous client for web search.
-- Inherits from the generic `BaseTool[str, List[SearchResult]]`, giving the tool a strongly typed input/output contract.
-- Returns internal `SearchResult` models instead of raw Tavily responses, keeping the rest of the pipeline independent of the search provider.
-- Supports configurable domain allowlisting through `TRUSTED_DOMAINS` in `settings.py`.
-- Validates user input before making external API requests.
-- Translates Tavily-specific exceptions into project-specific exceptions, preventing SDK details from leaking into the rest of the application.
-
-## Fetch Articles Tool
-
-### Pipeline Position
-
-```text
-Web Search
-      │
-      ▼
-Fetch Articles          ← This tool
-      │
-      ▼
-Extract Facts           
-      │
-      ▼
-Fact Check
-      │
-      ▼
-Generate Report
-```
-
-### Why `httpx` + `trafilatura`?
-
-- `httpx` provides an async HTTP client that integrates naturally with the async-first architecture.
-- `trafilatura` is responsible only for extracting the main article content from HTML after it has been fetched.
-
-This keeps ownership of the retrieval pipeline while delegating HTML boilerplate removal (navigation bars, ads, footers, etc.) to a mature library.
-
-**Tradeoff**
-
-| Option | Pros | Cons |
-|--------|------|------|
-| `trafilatura` ✅ | Robust article extraction, less boilerplate, focuses project on orchestration | Doesn't teach HTML extraction algorithms |
-| `BeautifulSoup/regex`❌ | Learn HTML parsing internals | Large amount of parsing code unrelated to the project's learning goals |
-
-Implements HTTP fetching, validation, content-type checking, size limits, and error handling itself.
+- **`max_sources` is clamped server-side**: `effective_max = min(request.max_sources, settings.MAX_SEARCH_RESULTS)`, so a client can request fewer sources for a faster response but can never exceed the operator-configured ceiling.
+- CORS origins and the API path prefix are environment-configurable, not hardcoded.
 
 ---
 
-### Why stream responses instead of downloading everything?
+## Known Limitations
 
-Articles are downloaded using `httpx.AsyncClient.stream()` instead of loading the entire response into memory.
-
-The tool performs two layers of protection:
-
-1. Check the `Content-Length` header (when available) before downloading.
-2. Stream the response in chunks and stop immediately if the accumulated size exceeds the configured limit.
-
-This prevents unnecessarily downloading very large pages and also protects against servers that omit or misreport the `Content-Length` header.
+- **Tavily `include_domains` is not a reliable hard filter.** The parameter is passed correctly on every request (confirmed via isolated testing and request logging), but Tavily occasionally returns results outside the configured allowlist. This was reproduced directly and corroborated by reports in Tavily's own community forum. No client-side filtering is applied as a workaround, since discarding out-of-allowlist results could leave zero usable sources with no way to request replacements from an already-spent search budget.
+- **Search quality depends heavily on query specificity.** Ambiguous queries (e.g., `"giant panda diet"` matching a grocery chain named GIANT) can return irrelevant sources even with domain filtering configured. Query reformulation/augmentation is out of scope for this project.
+- **Large articles are skipped, not chunked**, when they exceed the model's effective context window under free-tier rate limits.
+- **No independent fact-checking/verification stage** (see "Fact-Checking Stage" above) — confidence scores reflect extraction quality, not truth.
+- **Automated test coverage is partial.** `WebSearchTool` has unit tests demonstrating the testing approach (`pytest`, `pytest-asyncio`, `AsyncMock` for SDK mocking, exception-translation testing). The remaining modules were validated extensively through manual, real-API integration testing during development, documented throughout this README, but do not yet have automated test coverage. This is a known gap, stated plainly rather than left implicit.
+- **`llama-3.1-8b-instant` has a non-trivial failure rate on strict tool-calling.** Malformed tool-call generation is retried automatically, but retries don't always succeed — observed directly with the same article passing in one run and failing all 3 retries in the next. A larger/more capable model would likely reduce this; `max_retries` can be tuned at the cost of latency.
 
 ---
 
-### Exception translation pattern
+## Lessons Learned
 
-Translated http-specific exceptions into project-specific exceptions. This keeps the rest of the research pipeline independent of the HTTP library
+A few things worth naming explicitly, since they were the most valuable parts of building this:
 
----
-
-## Extract Facts Tool
-
-### Pipeline Position
-
-```text
-Web Search
-      │
-      ▼
-Fetch Articles
-      │
-      ▼
-Extract Facts           ← This tool
-      │
-      ▼
-Fact Check
-      │
-      ▼
-Generate Report
-```
+- **A committed API key, caught and fixed properly.** Early in the project, a Groq API key was briefly committed to a feature branch. It was diagnosed via `git log --all -p`, confirmed never to have reached the remote's `main` branch, removed via commit amend, and the key was rotated regardless. This is documented as a real incident and its resolution, not scrubbed from history.
+- **Manual, real-API testing found bugs no mock ever would.** A `tool_choice=null` bug that broke every non-tool LLM call, Groq's inconsistent 413-vs-400 signaling for oversized requests, and Tavily's non-strict domain filtering were all discovered by hitting real APIs and reading real error bodies carefully — not by writing more unit tests.
+- **The same exception-swallowing bug pattern appeared three separate times** (in `fetch_articles.py`, in `llm_client.py`'s retry loop, and in a `BadRequestError`-handling branch): a specific, correctly-raised custom exception getting silently recaptured by an overly broad `except` clause sitting between where it was raised and where it was meant to be caught. Worth remembering as a general debugging habit: when a specific exception isn't reaching where you expect, check every layer in between for a catch-all that's swallowing it first.
+- **Scope cuts are a legitimate engineering decision when named explicitly.** Both the fact-checking stage and full test coverage were cut deliberately, under real constraints (free-tier rate limits, project time), and documented with the actual tradeoff stated — rather than silently dropped or left implicit.
 
 ---
 
-### Overview
+## Project Structure
 
-The **ExtractFactsTool** is the reasoning stage of the research pipeline. It receives fully extracted article content (`List[ArticleContent]`) from the previous stage and uses an LLM to convert unstructured text into structured factual claims (`List[ExtractedFact]`). :contentReference[oaicite:0]{index=0}
-
-Unlike the search and article-fetching stages, this tool performs semantic reasoning rather than simple data retrieval. The output is later consumed by the fact-checking stage.
-
----
-
-Input:
-
-- `List[ArticleContent]`
-
-Output:
-
-- `List[ExtractedFact]`
-
----
-
-### 1. Process Articles Individually
-
-Each article is processed in its own LLM request instead of batching multiple articles together. :contentReference[oaicite:1]{index=1}
-
-**Why**
-
-- Keeps source attribution simple (every extracted fact knows exactly which article it came from)
-- One failed article does not affect the rest of the batch
-- Avoids unnecessarily large prompts
-- Easier logging and debugging
-
-Example:
-
-```text
-Article A  ──► LLM ──► Facts A
-
-Article B  ──► LLM ──► Facts B
-
-Article C  ──► LLM ──► Error
-                    │
-                    ▼
-                Skip article
-
-Final Output:
-Facts A + Facts B
-```
-
-This follows the pipeline philosophy of **graceful degradation** rather than failing the entire workflow because of one bad input.
-
----
-
-### 2. Use Function Calling Instead of Prompting for JSON
-
-Rather than asking the model:
-
-> "Return valid JSON."
-
-the tool forces the model to call an OpenAI-compatible function named `extract_facts`. The schema defines the exact structure expected from the model. :contentReference[oaicite:2]{index=2} :contentReference[oaicite:3]{index=3}
-
-Example schema:
-
-```python
-extract_facts(
-    facts=[
-        {
-            "statement": "...",
-            "extraction_confidence": 0.95,
-            "evidence": "..."
-        }
-    ]
-)
-```
-
-**Why**
-
-Function calling is significantly more reliable than prompt-only JSON because it prevents common formatting problems such as:
-
-- Markdown code fences
-- Extra explanations
-- Invalid JSON
-- Missing fields
-
-The LLM is constrained to produce structured arguments matching the schema.
+research-agent/         
+├── src/          
+│ ├── api/        
+│ │ ├── main.py # App factory, lifespan, dependency composition         
+│ │ ├── routes.py # HTTP endpoints        
+│ │ ├── exception_handlers.py # Domain exception → HTTP status mapping        
+│ │ └── schemas.py # API request/response Pydantic models         
+│ │         
+│ ├── core/             
+│ │ ├── models.py # Internal pipeline Pydantic models + ResearchState         
+│ │ ├── agent.py # ResearchAgent orchestrator         
+│ │ ├── llm_client.py # GroqLLMClient           
+│ │ └── tools/          
+│ │  │ ├── base.py # Generic BaseTool[InputT, OutputT]         
+│ │  │ ├── web_search.py # WebSearchTool (Tavily)        
+│ │  │ ├── fetch_articles.py # FetchArticlesTool (httpx + trafilatura)           
+│ │  │ └── extract_facts.py # ExtractFactsTool (Groq, forced tool-calling)       
+│ │         
+│ ├── config/           
+│ │ ├── settings.py # Pydantic BaseSettings           
+│ │ └── logger.py # Structured logging setup          
+│ │         
+│ └── utils/            
+│ ├── exceptions.py # Domain exception hierarchy            
+│ ├── hashing.py # Deterministic source ID generation             
+│ └── text.py # Shared text utilities (truncate, etc.)            
+│           
+├── tests/        
+│ ├── fixtures/         
+│ │ └── mock_data.py # Sample API response payloads         
+│ ├── conftest.py       
+│ └── test_tools.py # WebSearchTool unit tests        
+│           
+├── logs/ # Runtime logs (gitignored, volume-mounted in Docker)         
+│           
+├── Dockerfile          
+├── docker-compose.yml        
+├── .dockerignore             
+├── .env.example        
+├── .gitignore          
+├── pyproject.toml            
+├── requirements.txt          
+├── requirements-dev.txt            
+└── README.md           
+      
 
 ---
 
-### 3. Force Tool Usage
-
-The request is sent with:
-
-```python
-tool_choice="required"
-```
-
-instead of:
-
-```python
-tool_choice="auto"
-```
-
-This guarantees the model must invoke the extraction function rather than replying with plain text. :contentReference[oaicite:4]{index=4}
-
-This makes downstream parsing much simpler because the tool always expects a function call.
-
----
-
-### 4. Parse Tool Calls Instead of Free Text
-
-After the LLM responds, the tool extracts the function arguments and converts them into Python objects. :contentReference[oaicite:5]{index=5}
-
-Pipeline:
-
-```text
-LLM Response
-      │
-      ▼
-tool_calls
-      │
-      ▼
-arguments JSON
-      │
-      ▼
-Python dictionaries
-      │
-      ▼
-ExtractedFact models
-```
-
-This keeps the boundary between the LLM and the application strongly typed.
-
----
-
-### 5. Retry Probabilistic Failures
-
-One production issue discovered during development was malformed function calls.
-
-Example:
-
-```xml
-<function=extract_facts>
-{
-    "facts": [...]
-}
-</function>
-```
-
-The JSON itself was correct, but the XML wrapper violated the OpenAI function-calling protocol, causing Groq to reject the request.
-
-This failure is **probabilistic**, meaning the model may produce valid output on a subsequent attempt.
-
-Therefore the client retries:
-
-- Attempt 1
-- Attempt 2
-- Attempt 3
-
-using exponential backoff before giving up.
-
----
-
-### 6. Do Not Retry Deterministic Failures
-
-Large articles occasionally exceeded the model's context window.
-
-Example:
-
-```text
-HTTP 413
-Request too large
-```
-
-Retrying will never make the article smaller.
-
-Instead the article is skipped and processing continues.
-
-This distinction between **probabilistic** and **deterministic** failures greatly improves reliability.
-
----
-
-### 7. Graceful Degradation
-
-Errors affecting one article never stop the entire pipeline. :contentReference[oaicite:6]{index=6}
-
-Examples:
-
-- malformed response
-- timeout
-- rate limit
-- context window exceeded
-
-Result:
-
-```text
-Article 1 ✓
-Article 2 ✓
-Article 3 ✗
-Article 4 ✓
-
-Pipeline continues.
-
-Output contains facts from Articles 1, 2 and 4.
-```
-
-This mirrors how production ETL and AI pipelines typically behave.
-
----
-
-### Failure Modes
-
-| Failure | Cause | Domain Exception | Retry? |
-|---------|-------|------------------|--------|
-| Rate limit | HTTP 429 | `ExternalAPIRateLimitError` | ✅ Yes |
-| Timeout | Network/API | `ExternalAPITimeoutError` | ✅ Yes |
-| Malformed tool call | Invalid function arguments | `MalformedResponseError` | ✅ Yes |
-| Context window exceeded | HTTP 413 | `ContextWindowExceededError` | ❌ No |
-| Invalid request | HTTP 400 | `InputValidationError` | ❌ No |
-
----
-
-### Current Limitations
-
-Large articles are currently skipped rather than chunked.
-
-Future improvements could include:
-
-- chunking large articles into smaller sections
-- merging facts extracted from multiple chunks
-- supporting larger-context models
-- automatic chunk overlap for improved context preservation
-
-These optimizations were intentionally deferred to keep the initial implementation focused and maintainable.
-
----
-
-### Key Takeaways
-
-Building this tool highlighted several important production lessons:
-
-- Function calling is substantially more reliable than prompt-only JSON generation.
-- LLM failures are not all the same—probabilistic failures should often be retried, while deterministic failures should fail fast.
-- Graceful degradation is preferable to aborting an entire pipeline because of one problematic article.
-- Separating retry logic (LLM client) from business logic (tool implementation) results in cleaner, more maintainable code.
-
----
-
-Testing revealed an important limitation of **`llama-3.1-8b-instant`** when performing structured tool calling.
-
-Although malformed tool calls (`tool_use_failed`) are classified as **retryable**, retries do not always recover the request. In testing, one article consistently failed all three retry attempts due to the model repeatedly generating an XML-style function wrapper instead of the OpenAI-compatible tool call format expected by Groq.
-
-The pipeline behaves as designed:
-
-- Retries malformed responses with exponential backoff.
-- Logs the failure after the final retry.
-- Skips the failed article.
-- Continues processing the remaining articles.
-
-This demonstrates graceful degradation rather than pipeline failure.
-
-**Takeaway:** Smaller open-weight models can exhibit a relatively high failure rate on strict function-calling tasks. Increasing `max_retries` may improve success rates at the cost of additional latency, while upgrading to a more capable model would likely reduce these failures.
-
----
-
-## Logging Improvements
-
-**Decision:** Suppress verbose third-party DEBUG logs while preserving DEBUG logging for the application's own code.
-
-**Why?**
-
-Configuring the root logger at `DEBUG` also enabled debug logging from dependencies such as `httpx`, `httpcore`, `openai`, `trafilatura`, and `readability-lxml`. These libraries produced hundreds of low-level networking and parsing messages that obscured the application's own retry logic and pipeline events.
-
-Instead of lowering the global log level, the project explicitly raises the log level of known noisy libraries to `WARNING`, allowing:
-
-- Clean, readable logs during development
-- Full DEBUG visibility for application code
-- Easier debugging of retries, tool execution, and pipeline flow
-
-```python
-NOISY_LOGGERS = [
-    "httpx",
-    "httpcore",
-    "openai",
-    "trafilatura",
-    "readability-lxml",
-]
-```
-
-This list is intentionally hardcoded in `logger.py` because it reflects implementation details of project dependencies rather than application configuration.
-
----
-
-## Decision: Remove Fact-Checking Stage
-
-**Decision:** Remove the `FactCheckTool` from the research pipeline.
-
-**Why:** The project's goal is to learn AI engineering patterns (tool orchestration, retrieval, structured LLM outputs, retries, and exception handling). Adding a fact-checking stage would require another round of LLM calls, significantly increasing latency, token usage, and rate-limit pressure on the free Groq tier while providing relatively little additional learning value.
-
-**Tradeoff:** The final report now uses **extraction confidence** rather than independently verified confidence. This limitation is documented and can be addressed in a future version with a stronger model or dedicated verification pipeline.
-
----
-
-## Agent Orchestration
-
-**Decision:** Introduce a dedicated `ResearchAgent` to orchestrate the complete research pipeline and centralize report generation, while improving resilience to real-world API failures observed during integration.
-
-### Why
-
-Individual tools are responsible for only one task (search, fetch, or fact extraction). The orchestration layer coordinates the workflow, assembles the final report, and handles failures between stages without coupling the tools together.
-
-### Pipeline
-
-```
-User Query
-    │
-    ▼
-Web Search
-    │
-    ▼
-Fetch Articles
-    │
-    ▼
-Extract Facts
-    │
-    ▼
-Build Sources & Findings
-    │
-    ▼
-Generate Summary
-    │
-    ▼
-Research Report
-```
-
-### Key Design Decisions
-
-- Added a dedicated `ResearchAgent` responsible for coordinating the pipeline.
-- Reused the existing `GroqLLMClient` from `ExtractFactsTool` for summary generation instead of creating a second LLM client.
-- Summary generation uses a normal chat completion (no tool calling), since the desired output is natural-language prose rather than structured data.
-- Overall report confidence is computed as the mean extraction confidence of all findings.
-- Internal pipeline models (`ArticleContent`, `ExtractedFact`) are mapped into API-facing models (`Source`, `Finding`, `ResearchReport`) only at the orchestration layer.
-
-### Graceful Degradation
-
-The agent exits early whenever a stage produces no usable output:
-
-- No search results → empty report.
-- No articles fetched → empty report.
-- No facts extracted → empty report.
-- Summary generation failure → return the report with a fallback summary instead of failing the entire request.
-
-This allows partial failures to degrade gracefully while still returning a valid API response whenever possible.
-
-### Production Issues Discovered
-
-During end-to-end integration, several real API behaviors required additional handling.
-
-#### 1. Groq "reduce the length" errors
-
-Groq sometimes returns oversized requests as an HTTP 400 with a `"reduce the length"` message instead of the expected HTTP 413.
-
-**Decision:** Detect this observed message pattern and translate it into `ContextWindowExceededError`.
-
-This keeps all context-window failures following the same handling path (warning + skip article) regardless of how the API reports them.
-
-#### 2. Blocked article requests
-
-Some websites (e.g. Reuters) returned HTTP 401 instead of HTTP 403 when denying automated access.
-
-**Decision:** Treat both HTTP 401 and HTTP 403 as `BlockedRequestError`.
-
-Both responses represent the same outcome from the application's perspective: the article cannot be accessed and should be skipped.
-
-#### 3. Exception classification
-
-Without the new context-window mapping, oversized requests were incorrectly classified as `InputValidationError`, which was then wrapped as an `UnexpectedError` inside the extraction tool.
-
-**Decision:** Normalize these API responses into `ContextWindowExceededError` so expected operational failures are logged as warnings and skipped instead of appearing as unexpected application errors.
-
-### Benefits
-
-- Clear separation between orchestration and tool responsibilities.
-- Single entry point for the complete research workflow.
-- Graceful handling of partial failures.
-- Consistent domain exception hierarchy despite inconsistent third-party API behavior.
-- More robust production behavior based on real integration testing rather than documented API assumptions.
-
----
-
-### Decision: Source Filtering
-
-**Decision:** Only include sources in the final report if they contributed at least one extracted finding.
-
-**Why:** Successfully fetching an article does not guarantee successful fact extraction. LLM tool-calling can fail probabilistically (e.g., malformed tool calls after all retries), resulting in articles that were fetched but produced no usable findings. Listing these as report sources would be misleading.
-
-**Observed Behavior:** During testing, the same article (Simple English Wikipedia: Giant Panda) succeeded in one run but failed all three extraction retries in a subsequent run without any code changes. This demonstrates the probabilistic nature of the model's tool-calling reliability. The report now correctly distinguishes:
-- `sources_fetched`: articles successfully fetched and sent for extraction.
-- `sources`: only articles that actually contributed findings.
-
----
-
-## FastAPI API Layer
-
-This step exposed the research agent as a REST API using FastAPI while keeping the project's layered architecture intact.
-
-### Application Factory
-
-The API uses an application factory (`create_app()`) together with FastAPI's lifespan context manager.
-
-The lifespan hook is responsible for:
-
-- Creating the shared `GroqLLMClient`
-- Constructing all tool instances
-- Building a single `ResearchAgent`
-- Storing long-lived dependencies on `app.state`
-- Cleaning up resources (closing the article fetcher's HTTP client) during shutdown
-
-This ensures expensive resources are created once at startup instead of once per request.
-
-### Route Separation
-
-The API is split into dedicated modules:
-
-- `main.py`
-  - application creation
-  - dependency composition
-  - middleware registration
-  - lifespan management
-
-- `routes.py`
-  - HTTP endpoints
-  - request validation
-  - invoking the `ResearchAgent`
-  - returning typed responses
-
-- `exception_handlers.py`
-  - centralized exception → HTTP status mapping
-  - consistent JSON error responses
-  - logging
-
-This keeps the API layer focused and avoids mixing routing with application setup.
-
-### Exception Mapping
-
-The domain layer never raises HTTP exceptions.
-
-Instead, custom project exceptions are translated into HTTP responses only inside the API layer.
-
-Examples include:
-
-- `InputValidationError` → 400
-- `ExternalAPIRateLimitError` → 429
-- `ExternalAPITimeoutError` → 504
-- `ContextWindowExceededError` → 413
-- `MalformedResponseError` → 502
-- unexpected internal errors → 500
-
-This keeps the core research pipeline independent of FastAPI.
-
-### CORS
-
-CORS middleware was added to support future frontend applications.
-
-Allowed origins are configured through environment variables, allowing different frontend URLs without changing code.
-
-### API Prefix
-
-All endpoints, OpenAPI documentation, and Swagger UI are served under a configurable API prefix (`API_PREFIX`), making deployment behind reverse proxies or gateways straightforward.
-
----
-
-### Wiring `max_sources`
-
-The API supports an optional `max_sources` parameter, allowing clients to request fewer sources for faster responses.
-
-To enforce server limits, the requested value is clamped against the configured maximum:
-
-```python
-effective_max = min(
-    request.max_sources,
-    settings.MAX_SEARCH_RESULTS,
-)
-```
-
-The effective value is then passed through the research pipeline to `ResearchAgent` and `WebSearchTool`, ensuring clients cannot exceed the server-defined limit while still allowing per-request flexibility.
-
----
-
-## Known Limitation:  Tavily `include_domains`
-
-The application passes Tavily's `include_domains` parameter correctly on every search request.
-
-During testing, however, Tavily occasionally returned results outside the configured allowlist despite the parameter being present. This behavior was reproduced and appears to be an inconsistency in the search provider rather than the application.
-
-The project currently relies on Tavily's implementation and does **not** perform additional client-side filtering, as filtering could discard all returned results without providing replacement sources.
-
-### Query Specificity
-
-Search quality depends heavily on the specificity of the user's query.
-
-Broad or ambiguous queries may retrieve less relevant sources even when domain preferences are configured. The project intentionally leaves query formulation unchanged and delegates ranking decisions to the search provider.
-
----
-
-## Testing: "Planned but not completed."
-
-Automated tests currently focus on WebSearchTool, demonstrating the project's testing approach using pytest, pytest-asyncio, and AsyncMock for asynchronous code and external SDK mocking. The remaining components were primarily validated through extensive end-to-end integration testing against the real Groq and Tavily APIs during development. Full automated coverage of the remaining modules is a known future improvement.
-
----
-
-# Docker Support
-
-The project now includes Docker support for consistent, reproducible deployment across environments.
-
-**Implemented:**
-- Added a `Dockerfile` based on `python:3.12-slim`.
-- Optimized Docker layer caching by copying `requirements.txt` before the application source, preventing unnecessary dependency reinstalls when only source code changes.
-- Installed dependencies with `pip --no-cache-dir` to keep the final image smaller.
-- Configured the container to run the FastAPI application with Uvicorn on port `8000`.
-- Added a dedicated non-root user (`appuser`) and updated file ownership to follow container security best practices.
-- Added a `.dockerignore` file to exclude unnecessary files (e.g., `.env`, tests, logs, caches, virtual environments, and Git metadata) from the Docker build context, reducing image size and preventing accidental inclusion of sensitive files.
-- Added a `docker-compose.yml` file to simplify local development by:
-  - Building the application image.
-  - Injecting environment variables from `.env` at runtime instead of baking secrets into the image.
-  - Exposing the API on port `8000`.
-  - Mounting the `logs/` directory as a volume so log files persist outside the container.
-  - Configuring the service to restart automatically unless explicitly stopped.
-
-This setup provides a lightweight, secure, and reproducible deployment environment while following common Docker best practices for Python web applications.
+## Tech Stack
+
+- **API**: FastAPI, Uvicorn
+- **LLM**: Groq (Llama 3.1 8B Instant) via the OpenAI-compatible SDK
+- **Search**: Tavily
+- **HTTP**: httpx (async)
+- **Content extraction**: trafilatura
+- **Validation**: Pydantic v2 / pydantic-settings
+- **Testing**: pytest, pytest-asyncio
+- **Containerization**: Docker, Docker Compose
