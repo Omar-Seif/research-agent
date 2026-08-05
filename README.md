@@ -927,3 +927,24 @@ Broad or ambiguous queries may retrieve less relevant sources even when domain p
 
 Automated tests currently focus on WebSearchTool, demonstrating the project's testing approach using pytest, pytest-asyncio, and AsyncMock for asynchronous code and external SDK mocking. The remaining components were primarily validated through extensive end-to-end integration testing against the real Groq and Tavily APIs during development. Full automated coverage of the remaining modules is a known future improvement.
 
+---
+
+# Docker Support
+
+The project now includes Docker support for consistent, reproducible deployment across environments.
+
+**Implemented:**
+- Added a `Dockerfile` based on `python:3.12-slim`.
+- Optimized Docker layer caching by copying `requirements.txt` before the application source, preventing unnecessary dependency reinstalls when only source code changes.
+- Installed dependencies with `pip --no-cache-dir` to keep the final image smaller.
+- Configured the container to run the FastAPI application with Uvicorn on port `8000`.
+- Added a dedicated non-root user (`appuser`) and updated file ownership to follow container security best practices.
+- Added a `.dockerignore` file to exclude unnecessary files (e.g., `.env`, tests, logs, caches, virtual environments, and Git metadata) from the Docker build context, reducing image size and preventing accidental inclusion of sensitive files.
+- Added a `docker-compose.yml` file to simplify local development by:
+  - Building the application image.
+  - Injecting environment variables from `.env` at runtime instead of baking secrets into the image.
+  - Exposing the API on port `8000`.
+  - Mounting the `logs/` directory as a volume so log files persist outside the container.
+  - Configuring the service to restart automatically unless explicitly stopped.
+
+This setup provides a lightweight, secure, and reproducible deployment environment while following common Docker best practices for Python web applications.
