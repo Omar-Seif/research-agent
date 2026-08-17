@@ -150,6 +150,7 @@ class ResearchAgent:
         - Be 2-3 paragraphs (150-250 words)
         - Be written in a clear, professional tone
         - Not simply list the facts — synthesize them
+        - Do NOT include any reasoning, analysis, or tags like <think> in your output. Only output the final summary.
         """
 
         user_prompt = f"""
